@@ -63,6 +63,17 @@ describe('Persistencia PostgreSQL', () => {
     expect(rows[0]?.existe).toBe(true)
   })
 
+  it('rechaza un proveedor que omite migraciones ya aplicadas sin alterar el esquema', async () => {
+    const outcome = await migrateToLatest(db, {})
+
+    expect(outcome.applied).toEqual([])
+    expect(outcome.error).toBeInstanceOf(Error)
+    const { rows } = await sql<{ existe: boolean }>`
+      select to_regclass('public.tournament_encounters') is not null as existe
+    `.execute(db)
+    expect(rows[0]?.existe).toBe(true)
+  })
+
   it('informa una migracion rota en lugar de darla por aplicada', async () => {
     const outcome = await migrateToLatest(db, {
       ...MIGRATIONS,
