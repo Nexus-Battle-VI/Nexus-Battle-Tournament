@@ -4,15 +4,35 @@ import type { Kysely } from 'kysely'
 
 import { HealthController } from '../../adapters/inbound/http/health.controller'
 import { READINESS_CHECKS, VERSION_REPORT } from '../../adapters/inbound/http/tokens.health'
+import { TournamentMatchesController } from '../../adapters/inbound/http/tournament-matches.controller'
+import {
+  GET_TOURNAMENT_MATCH_DETAIL,
+  LIST_TOURNAMENT_MATCHES,
+} from '../../adapters/inbound/http/tokens.tournament-matches'
 import { AnonymousIdentityGuard } from '../../adapters/inbound/http/auth/anonymous.guard'
 import { InternalServiceGuard } from '../../adapters/inbound/http/auth/internal-service.guard'
 import { JwtAuthGuard } from '../../adapters/inbound/http/auth/jwt-auth.guard'
 import { RolesGuard } from '../../adapters/inbound/http/auth/roles.guard'
 import { CognitoTokenVerifier } from '../../adapters/outbound/identity/CognitoTokenVerifier'
 import type { Database } from '../../adapters/outbound/persistence/schema'
+import { InMemoryTournamentEncounterRepository } from '../../adapters/outbound/persistence/InMemoryTournamentEncounterRepository'
+import { PostgresTournamentEncounterRepository } from '../../adapters/outbound/persistence/PostgresTournamentEncounterRepository'
+import { DevFixtureTournamentEncounterSource } from '../../adapters/outbound/bracket/DevFixtureTournamentEncounterSource'
+import { DevFixtureCombatRecordAdapter } from '../../adapters/outbound/combat/DevFixtureCombatRecordAdapter'
 import { SystemClock } from '../../adapters/outbound/system/SystemClock'
 import { CLOCK, type ClockPort } from '../../application/ports/ClockPort'
 import { TOKEN_VERIFIER, type TokenVerifierPort } from '../../application/ports/TokenVerifierPort'
+import {
+  TOURNAMENT_ENCOUNTER_REPOSITORY,
+  type TournamentEncounterRepositoryPort,
+} from '../../application/ports/TournamentEncounterRepositoryPort'
+import {
+  TOURNAMENT_ENCOUNTER_SOURCE,
+  type TournamentEncounterSourcePort,
+} from '../../application/ports/TournamentEncounterSourcePort'
+import { COMBAT_RECORD, type CombatRecordPort } from '../../application/ports/CombatRecordPort'
+import { GetTournamentMatchDetail } from '../../application/use-cases/GetTournamentMatchDetail'
+import { ListTournamentMatches } from '../../application/use-cases/ListTournamentMatches'
 import { AuthMode, loadConfig, PersistenceDriver, type AppConfig } from '../config/env'
 import type { ReadinessCheck, VersionReport } from '../health/health'
 import { describeError } from '../observability/describe-error'
@@ -42,7 +62,7 @@ export const INTERNAL_CALLERS: readonly string[] = []
  * independiente del framework.
  */
 @Module({
-  controllers: [HealthController],
+  controllers: [HealthController, TournamentMatchesController],
   providers: [
     {
       provide: APP_CONFIG,
@@ -173,6 +193,47 @@ export const INTERNAL_CALLERS: readonly string[] = []
         nodeEnv: config.nodeEnv,
       }),
       inject: [APP_CONFIG],
+    },
+    // --- HU-83 (Management#465): registro y consulta de justas -------------
+    //
+    // `TOURNAMENT_ENCOUNTER_SOURCE` y `COMBAT_RECORD` apuntan hoy a dobles de
+    // desarrollo explicitos: HU-78 (bracket) y HU-85 (vinculo con Combat) no
+    // existen todavia en codigo. Reemplazarlos por los adaptadores reales,
+    // el dia que existan, es cambiar estas dos fabricas — ningun caso de uso
+    // ni controlador deberia tocarse.
+    {
+      provide: TOURNAMENT_ENCOUNTER_REPOSITORY,
+      useFactory: (db: Kysely<Database> | null): TournamentEncounterRepositoryPort =>
+        db === null
+          ? new InMemoryTournamentEncounterRepository()
+          : new PostgresTournamentEncounterRepository(db),
+      inject: [DATABASE],
+    },
+    {
+      provide: TOURNAMENT_ENCOUNTER_SOURCE,
+      useFactory: (): TournamentEncounterSourcePort => new DevFixtureTournamentEncounterSource(),
+    },
+    {
+      provide: COMBAT_RECORD,
+      useFactory: (): CombatRecordPort => new DevFixtureCombatRecordAdapter(),
+    },
+    {
+      provide: LIST_TOURNAMENT_MATCHES,
+      useFactory: (
+        repository: TournamentEncounterRepositoryPort,
+        source: TournamentEncounterSourcePort,
+        combat: CombatRecordPort,
+      ): ListTournamentMatches => new ListTournamentMatches(repository, source, combat),
+      inject: [TOURNAMENT_ENCOUNTER_REPOSITORY, TOURNAMENT_ENCOUNTER_SOURCE, COMBAT_RECORD],
+    },
+    {
+      provide: GET_TOURNAMENT_MATCH_DETAIL,
+      useFactory: (
+        repository: TournamentEncounterRepositoryPort,
+        source: TournamentEncounterSourcePort,
+        combat: CombatRecordPort,
+      ): GetTournamentMatchDetail => new GetTournamentMatchDetail(repository, source, combat),
+      inject: [TOURNAMENT_ENCOUNTER_REPOSITORY, TOURNAMENT_ENCOUNTER_SOURCE, COMBAT_RECORD],
     },
   ],
 })
