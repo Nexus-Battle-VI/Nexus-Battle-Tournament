@@ -1,0 +1,18 @@
+# Propiedad del código — Nexus-Battle-Tournament
+#
+# Bounded context: Tournament
+# Teams propietarios: Team Beta y Team Gama (asignados el 2026-09-30, ADR-022)
+#
+# Los Code Owners son obligatorios en la revisión de Pull Requests hacia `develop` y `main`.
+# Con dos equipos en la misma línea basta la aprobación de un miembro de cualquiera de ellos.
+# Management permanece como fuente única de Issues; aquí solo se gobierna el código.
+
+*                       @Nexus-Battle-VI/team-beta @Nexus-Battle-VI/team-gama
+
+# Gobierno del repositorio y automatización
+/.github/               @Nexus-Battle-VI/team-beta @Nexus-Battle-VI/team-gama @Nexus-Battle-VI/scrum-master
+/.github/workflows/     @Nexus-Battle-VI/team-beta @Nexus-Battle-VI/team-gama @Nexus-Battle-VI/scrum-master
+/.github/CODEOWNERS     @Nexus-Battle-VI/scrum-master
+
+# Documentación técnica y contratos
+/docs/                  @Nexus-Battle-VI/team-beta @Nexus-Battle-VI/team-gama @Nexus-Battle-VI/scrum-master
