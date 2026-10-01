@@ -189,6 +189,91 @@ describe('EnsureTournamentMatchesSeeded', () => {
 })
 
 describe('ProjectCombatRecord', () => {
+  const paginatedFixture = async () => {
+    const repository = new InMemoryTournamentEncounterRepository()
+    const seed = (await new StubEncounterSource().listEncounters('T1'))[1]!
+    await repository.save(seed)
+    const events = Array.from({ length: 250 }, (_, index) => ({
+      roomId: seed.combatRoomId!,
+      seq: index + 1,
+      type: 'turnResolved',
+      occurredAt: new Date('2026-09-30T20:00:00Z'),
+      payload: {},
+    }))
+    const readRecord = jest.fn((roomId: string, afterSeq: number): Promise<CombatRoomRecord> =>
+      Promise.resolve({
+        roomId,
+        tournamentId: 'T1',
+        encounterId: 'E2',
+        status: 'IN_BATTLE',
+        startedAt: null,
+        result: null,
+        afterSeq,
+        lastSeq: 250,
+        events: events.filter((event) => event.seq > afterSeq).slice(0, 100),
+      }),
+    )
+    return {
+      repository,
+      readRecord,
+      projector: new ProjectCombatRecord(repository, { readRecord }),
+    }
+  }
+
+  it('guarda los 250 eventos sin saltar paginas y solo completa al alcanzar el final', async () => {
+    const { repository, readRecord, projector } = await paginatedFixture()
+    const save = jest.spyOn(repository, 'save')
+
+    const projected = await projector.execute('T1', 'E2')
+
+    expect(readRecord.mock.calls.map((call) => call[1])).toEqual([0, 100, 200])
+    expect(
+      save.mock.calls.map(([encounter]) => [encounter.lastSyncedSeq, encounter.logComplete]),
+    ).toEqual([
+      [100, false],
+      [200, false],
+      [250, true],
+    ])
+    expect(projected.lastSyncedSeq).toBe(250)
+    const stored = await repository.listEvents('T1', 'E2', 0, 300)
+    expect(stored.events.map((event) => event.seq)).toEqual(
+      Array.from({ length: 250 }, (_, index) => index + 1),
+    )
+  })
+
+  it('reanuda desde la ultima pagina guardada si Combat falla en la siguiente', async () => {
+    const { repository, readRecord, projector } = await paginatedFixture()
+    const readPage = readRecord.getMockImplementation()!
+    readRecord
+      .mockImplementationOnce(readPage)
+      .mockRejectedValueOnce(new Error('Combat unavailable'))
+
+    await expect(projector.execute('T1', 'E2')).rejects.toThrow('Combat unavailable')
+    expect(await repository.findOne('T1', 'E2')).toMatchObject({
+      lastSyncedSeq: 100,
+      logComplete: false,
+    })
+
+    await projector.execute('T1', 'E2')
+    expect(readRecord.mock.calls.map((call) => call[1])).toEqual([0, 100, 100, 200])
+    expect((await repository.listEvents('T1', 'E2', 0, 300)).events).toHaveLength(250)
+  })
+
+  it('una pagina vacia con eventos pendientes no adelanta el cursor ni marca completo', async () => {
+    const { readRecord, projector } = await paginatedFixture()
+    const readPage = readRecord.getMockImplementation()!
+    readRecord.mockImplementation(async (roomId, afterSeq) => ({
+      ...(await readPage(roomId, afterSeq)),
+      events: [],
+    }))
+
+    expect(await projector.execute('T1', 'E2')).toMatchObject({
+      lastSyncedSeq: 0,
+      logComplete: false,
+    })
+    expect(readRecord).toHaveBeenCalledTimes(1)
+  })
+
   it('rechaza un registro de Combat que no corresponde a la justa pedida', async () => {
     const repository = new InMemoryTournamentEncounterRepository()
     await repository.save({

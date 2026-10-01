@@ -115,7 +115,7 @@ export const applyCombatProjection = (
   projection: CombatProjectionInput,
 ): TournamentEncounter => {
   const lastSyncedSeq = Math.max(encounter.lastSyncedSeq, projection.lastSeq)
-  const logComplete = encounter.logComplete || projection.logComplete
+  const logComplete = projection.logComplete
 
   if (encounter.status === TournamentMatchStatus.Finished) {
     // Terminal: solo se permite seguir leyendo eventos sobrantes del archivo.

@@ -27,7 +27,7 @@ export class ProjectCombatRecord {
   ) {}
 
   async execute(tournamentId: string, encounterId: string): Promise<TournamentEncounter> {
-    const encounter = await this.repository.findOne(tournamentId, encounterId)
+    let encounter = await this.repository.findOne(tournamentId, encounterId)
 
     if (encounter === null) {
       throw new DomainError(
@@ -40,55 +40,66 @@ export class ProjectCombatRecord {
       return encounter
     }
 
-    const record = await this.combat.readRecord(encounter.combatRoomId, encounter.lastSyncedSeq)
+    const roomId = encounter.combatRoomId
 
-    if (record.tournamentId !== tournamentId || record.encounterId !== encounterId) {
-      // Defensa de CA-01: el registro de Combat debe ser el de ESTA justa. Un
-      // adaptador que devolviera el de otra sala por error nunca debe mezclarse
-      // con el estado local.
-      throw new DomainError(
-        `El registro de Combat para la sala "${encounter.combatRoomId}" no corresponde a la ` +
-          `justa "${tournamentId}:${encounterId}".`,
+    do {
+      const record = await this.combat.readRecord(roomId, encounter.lastSyncedSeq)
+
+      if (record.tournamentId !== tournamentId || record.encounterId !== encounterId) {
+        // Defensa de CA-01: el registro de Combat debe ser el de ESTA justa. Un
+        // adaptador que devolviera el de otra sala por error nunca debe mezclarse
+        // con el estado local.
+        throw new DomainError(
+          `El registro de Combat para la sala "${roomId}" no corresponde a la ` +
+            `justa "${tournamentId}:${encounterId}".`,
+        )
+      }
+
+      const events: CombatEventRecord[] = record.events.map((event) => ({
+        tournamentId,
+        encounterId,
+        seq: event.seq,
+        type: event.type,
+        payload: event.payload,
+        occurredAt: event.occurredAt,
+      }))
+
+      if (events.length > 0) {
+        await this.repository.appendEvents(events)
+      }
+
+      const lastLocalSeq = events.reduce(
+        (max, event) => Math.max(max, event.seq),
+        encounter.lastSyncedSeq,
       )
-    }
+      const logComplete = lastLocalSeq >= record.lastSeq
 
-    const events: CombatEventRecord[] = record.events.map((event) => ({
-      tournamentId,
-      encounterId,
-      seq: event.seq,
-      type: event.type,
-      payload: event.payload,
-      occurredAt: event.occurredAt,
-    }))
+      const projected = applyCombatProjection(encounter, {
+        status: record.status,
+        startedAt: record.startedAt,
+        result:
+          record.result === null
+            ? null
+            : {
+                winnerTeamLabel: record.result.winnerTeamLabel,
+                reason: record.result.reason,
+                outcome: record.result.outcome,
+                finishedAt: record.result.finishedAt,
+              },
+        lastSeq: lastLocalSeq,
+        logComplete,
+      })
 
-    if (events.length > 0) {
-      await this.repository.appendEvents(events)
-    }
+      await this.repository.save(projected)
 
-    const lastLocalSeq = events.reduce(
-      (max, event) => Math.max(max, event.seq),
-      encounter.lastSyncedSeq,
-    )
-    const logComplete = lastLocalSeq >= record.lastSeq
+      encounter = projected
 
-    const projected = applyCombatProjection(encounter, {
-      status: record.status,
-      startedAt: record.startedAt,
-      result:
-        record.result === null
-          ? null
-          : {
-              winnerTeamLabel: record.result.winnerTeamLabel,
-              reason: record.result.reason,
-              outcome: record.result.outcome,
-              finishedAt: record.result.finishedAt,
-            },
-      lastSeq: record.lastSeq,
-      logComplete,
-    })
+      // No repetir una pagina vacia: el cursor solo avanza con eventos guardados.
+      if (events.length === 0) {
+        return projected
+      }
+    } while (!encounter.logComplete)
 
-    await this.repository.save(projected)
-
-    return projected
+    return encounter
   }
 }
