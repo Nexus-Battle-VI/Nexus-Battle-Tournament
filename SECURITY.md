@@ -19,9 +19,9 @@ Las vulnerabilidades **no se reportan mediante Issues públicas ni Pull Requests
 
 ## Consideraciones específicas
 
-- Mueve la economía interna del juego: un error aquí duplica o destruye créditos. Las invariantes viven en PostgreSQL, no solo en el código.
+- Coordina cobros de inscripción y premios: un error aquí cobra dos veces, da un cupo sin cobrar o paga dos premios. Las invariantes viven en PostgreSQL, no solo en el código, y el dinero lo mueve Wallet con `operationId`.
 - Ningún contrato público acepta un importe a cobrar o a pagar, un resultado de justa ni un `playerId` distinto del `sub` del testimonio.
-- Las operaciones que mueven créditos solo existen como rutas internas firmadas, con lista cerrada de servicios autorizados.
+- Un resultado de justa solo lo acepta de Combat por ruta interna firmada, y solo para la sala vinculada a esa justa.
 
 ## Manejo de secretos
 
