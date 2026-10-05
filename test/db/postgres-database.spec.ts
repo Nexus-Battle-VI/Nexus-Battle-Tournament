@@ -4,6 +4,7 @@ import { sql, type Kysely, type Migration } from 'kysely'
 import type { Database } from '../../src/adapters/outbound/persistence/schema'
 import {
   createDatabase,
+  MIGRATIONS,
   migrateToLatest,
   pingDatabase,
 } from '../../src/infrastructure/persistence/database'
@@ -41,6 +42,7 @@ describe('Persistencia PostgreSQL', () => {
 
   it('registra las migraciones aplicadas y no las repite', async () => {
     const migrations: Record<string, Migration> = {
+      ...MIGRATIONS,
       '900-prueba': {
         up: async (conexion: Kysely<unknown>) => {
           await conexion.schema.createTable('prueba').addColumn('id', 'text').execute()
@@ -48,8 +50,12 @@ describe('Persistencia PostgreSQL', () => {
       },
     }
 
-    expect((await migrateToLatest(db, migrations)).applied).toEqual(['900-prueba'])
-    expect((await migrateToLatest(db, migrations)).applied).toEqual([])
+    const first = await migrateToLatest(db, migrations)
+    expect(first.error).toBeUndefined()
+    expect(first.applied).toEqual(['900-prueba'])
+    const replay = await migrateToLatest(db, migrations)
+    expect(replay.error).toBeUndefined()
+    expect(replay.applied).toEqual([])
 
     const { rows } = await sql<{ existe: boolean }>`
       select to_regclass('public.prueba') is not null as existe
@@ -57,8 +63,20 @@ describe('Persistencia PostgreSQL', () => {
     expect(rows[0]?.existe).toBe(true)
   })
 
+  it('rechaza un proveedor que omite migraciones ya aplicadas sin alterar el esquema', async () => {
+    const outcome = await migrateToLatest(db, {})
+
+    expect(outcome.applied).toEqual([])
+    expect(outcome.error).toBeInstanceOf(Error)
+    const { rows } = await sql<{ existe: boolean }>`
+      select to_regclass('public.tournament_encounters') is not null as existe
+    `.execute(db)
+    expect(rows[0]?.existe).toBe(true)
+  })
+
   it('informa una migracion rota en lugar de darla por aplicada', async () => {
     const outcome = await migrateToLatest(db, {
+      ...MIGRATIONS,
       '900-prueba': { up: () => Promise.resolve() },
       '901-rota': { up: () => Promise.reject(new Error('sql invalido')) },
     })

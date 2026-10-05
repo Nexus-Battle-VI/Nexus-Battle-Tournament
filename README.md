@@ -16,9 +16,9 @@ Este repositorio contiene código y Pull Requests. No contiene Issues ni Product
 
 ## Estado
 
-**Andamiaje.** Arranca, verifica identidad, firma y comprueba el contrato interno, expone sus sondas y conecta con su base.
+Arranca, verifica identidad, firma y comprueba el contrato interno, expone sus sondas y conecta con su base.
 
-**No tiene todavía ninguna ruta de negocio ni ninguna tabla**: las añade cada Historia de Usuario. Mientras tanto, cualquier ruta bajo ese prefijo responde `404` desde NestJS.
+**HU-83 (registro y consulta de justas)** es la primera Historia de Usuario con rutas de negocio propias: `GET /api/v1/tournaments/:tournamentId/matches` y `GET /api/v1/tournaments/:tournamentId/matches/:matchId`, sobre las tablas `tournament_encounters` y `tournament_combat_events`. Depende de HU-78 (bracket) y HU-85 (vinculo con Combat), que todavía no existen: hoy corre contra un doble explícito de cada una (`DevFixtureTournamentEncounterSource`, `DevFixtureCombatRecordAdapter`), documentado como tal. Ver `docs/architecture.md` y el propio código para el detalle. Cualquier otra ruta bajo el prefijo responde `404` desde NestJS.
 
 ## Qué posee este contexto
 
