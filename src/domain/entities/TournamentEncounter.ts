@@ -5,6 +5,8 @@
  * Esta es la proyeccion que Tournament decide mostrar a partir de lo que sabe
  * del bracket y de lo que Combat informa.
  */
+import type { TeamAvatar } from '../registration'
+
 export const TournamentMatchStatus = {
   /** El bracket todavia no resolvio los equipos de esta justa (ronda futura). */
   WaitingParticipants: 'WAITING_PARTICIPANTS',
@@ -57,7 +59,28 @@ export interface TournamentMatchResult {
  */
 export type CombatRoomStatus = 'PREPARING' | 'IN_BATTLE' | 'FINISHED'
 
+export interface EncounterBracketMetadata {
+  readonly bracketTrack: 'MAIN' | 'SECONDARY' | 'FINAL'
+  readonly registeredTeams: readonly ({
+    teamId: string
+    name: string
+    avatar: TeamAvatar
+    memberIds: readonly [string, string]
+  } | null)[]
+  readonly preparationStatus:
+    | 'WAITING_TEAMS'
+    | 'TEAMS_RESOLVED'
+    | 'PREPARING'
+    | 'PREPARED'
+    | 'START_PENDING'
+    | 'IN_BATTLE'
+    | 'FINISHED'
+  readonly engineLastSeq: number | null
+  readonly syncedAt: string | null
+}
+
 export interface TournamentEncounter {
+  readonly bracketMetadata?: EncounterBracketMetadata
   readonly tournamentId: string
   readonly encounterId: string
   /** Ronda del bracket, 1-indexada. El avance del bracket es HU-80, no esto. */

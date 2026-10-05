@@ -1,19 +1,12 @@
 /**
  * Puerto de lectura del registro autoritativo de una sala de Combat.
  *
- * Espeja `GET /api/internal/v1/combat/tournament-rooms/{roomId}/record?afterSeq=N`
- * de la propuesta de contrato Tournament<->Combat revisada contra Combat
- * `develop` (commit `2c56839`), documentada en Management#509/#485 y
- * pendiente del Enabler Management#517 (que expone esa ruta en Combat de
- * verdad). ESA RUTA NO EXISTE TODAVIA: hoy este puerto solo lo satisface
- * `DevFixtureCombatRecordAdapter`, un doble explicito de desarrollo.
- *
- * El dia que Management#517 exista, el reemplazo es un adaptador HTTP nuevo
- * que firme la peticion con el esquema HMAC de
- * `adapters/outbound/identity/internal-signature.ts` (ya usado por este
- * servicio para sus propias rutas internas) y traduzca la respuesta a este
- * mismo contrato. Nada en los casos de uso que consumen este puerto deberia
- * cambiar.
+ * `HttpCombatRecordAdapter` traduce el contrato publicado de
+ * `GET /api/internal/v1/combat/tournament-rooms/{roomId}/record?afterSeq=N`,
+ * con eventos anidados y equipos del motor, a este puerto histórico de HU-83.
+ * Las consultas solo leen salas previamente vinculadas; la creación y el
+ * inicio pertenecen a HU-85. `teams` es opcional para conservar los dobles
+ * históricos, que las pruebas seleccionan explícitamente.
  */
 
 /**
@@ -45,6 +38,10 @@ export interface CombatRoomEventWire {
 }
 
 export interface CombatRoomRecord {
+  readonly teams?: readonly {
+    teamLabel: string
+    participants: readonly { playerId: string; heroId: string }[]
+  }[]
   readonly roomId: string
   /**
    * Eco de la identidad de la justa que pidio la lectura. Comprobarlo contra

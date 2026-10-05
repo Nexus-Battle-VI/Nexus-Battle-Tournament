@@ -12,14 +12,9 @@ import type { CombatRecordPort } from '../ports/CombatRecordPort'
  * no tiene para un torneo, leyendolas de `TournamentEncounterSourcePort`, y
  * proyecta sobre ellas lo que `CombatRecordPort` ya sepa.
  *
- * Existe porque HU-78 (bracket) y HU-85 (vinculo con la sala) no estan
- * implementadas todavia: sin este paso, `tournament_encounters` estaria
- * siempre vacia y no habria nada que listar o consultar. El dia que existan,
- * este caso de uso deja de hacer falta tal como esta — lo normal sera que algo
- * (un evento de bracket generado, o el propio HU-85 al vincular una sala)
- * dispare `save`/`ProjectCombatRecord` directamente. Mientras tanto, se invoca
- * de forma perezosa antes de listar o consultar (`ListTournamentMatches`,
- * `GetTournamentMatchDetail`).
+ * La publicación HU-78 ya materializa las catorce filas en su transacción.
+ * El sembrado perezoso conserva compatibilidad con otras implementaciones
+ * del puerto, incluidos los dobles seleccionados por la suite histórica.
  *
  * El SEMBRADO (leer `TournamentEncounterSourcePort` y crear las filas) ocurre
  * una UNICA vez por torneo: si ya hay justas persistidas, no se vuelve a
@@ -33,7 +28,7 @@ import type { CombatRecordPort } from '../ports/CombatRecordPort'
  * `tournament_combat_events` impide duplicar eventos ya proyectados, asi que
  * no hace falta ningun mecanismo de deduplicacion propio. Una vez que una
  * justa llega a `FINISHED` es terminal (`applyCombatProjection`), asi que
- * dejar de reintentarla no pierde nada.
+ * se sigue completando su bitácora mientras `logComplete` sea falso.
  *
  * NO MUTA nada en Combat ni en el bracket: solo lee de los dos puertos y
  * escribe en el almacen propio de Tournament. Cumple la misma restriccion que
@@ -70,7 +65,7 @@ export class EnsureTournamentMatchesSeeded {
 
   /**
    * Reintenta la proyeccion de Combat para cada justa con sala vinculada que
-   * todavia no sea terminal. Se llama en CADA `execute`, no solo cuando se
+   * no haya terminado de archivarse. Se llama en CADA `execute`, no solo cuando se
    * acaba de sembrar, para que el estado de Tournament no quede congelado.
    */
   private async reprojectPending(
@@ -79,11 +74,14 @@ export class EnsureTournamentMatchesSeeded {
   ): Promise<void> {
     const pending = encounters.filter(
       (encounter) =>
-        encounter.combatRoomId !== null && encounter.status !== TournamentMatchStatus.Finished,
+        encounter.combatRoomId !== null &&
+        (encounter.status !== TournamentMatchStatus.Finished || !encounter.logComplete),
     )
 
     await Promise.all(
-      pending.map((encounter) => this.projector.execute(tournamentId, encounter.encounterId)),
+      pending.map((encounter) =>
+        this.projector.execute(tournamentId, encounter.encounterId).catch(() => undefined),
+      ),
     )
   }
 }

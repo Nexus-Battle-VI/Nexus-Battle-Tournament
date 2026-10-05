@@ -1,4 +1,11 @@
 import type { ColumnType, Generated } from 'kysely'
+import type {
+  EntryPolicy,
+  RegistrationTeam,
+  RegistrationOperation,
+} from '../../../domain/registration'
+import type { PublishedBracket } from '../../../domain/bracket'
+import type { EncounterBracketMetadata } from '../../../domain/entities/TournamentEncounter'
 
 import type { TournamentEncounterTeam } from '../../../domain/entities/TournamentEncounter'
 
@@ -39,6 +46,11 @@ export interface StoredMatchResult {
  * tablas aparte es prematuro mientras HU-78/HU-85 no fijen su forma definitiva.
  */
 export interface TournamentEncounterTable {
+  readonly bracket_metadata?: ColumnType<
+    EncounterBracketMetadata | null,
+    string | null | undefined,
+    string | null
+  >
   readonly tournament_id: string
   readonly encounter_id: string
   readonly round: number
@@ -80,6 +92,38 @@ export interface TournamentCombatEventTable {
 }
 
 export interface Database {
+  tournaments: RegistrationTournamentTable
+  registration_teams: RegistrationTeamTable
+  registration_members: { tournament_id: string; team_id: string; player_id: string }
+  registration_operations: RegistrationOperationTable
+  tournament_admin_operations: { operation_id: string; intent: string; tournament_id: string }
   tournament_encounters: TournamentEncounterTable
   tournament_combat_events: TournamentCombatEventTable
+}
+export interface RegistrationTournamentTable {
+  id: string
+  name: string
+  entry_policy: ColumnType<EntryPolicy, string, never>
+  entry_fee: ColumnType<string | null, number | null, never>
+  opens_at: ColumnType<Date, Date, never>
+  closes_at: ColumnType<Date, Date, never>
+  starts_at: ColumnType<Date, Date, never>
+  starts_epoch: ColumnType<string, number, never>
+  bracket: ColumnType<PublishedBracket | null, string | null | undefined, string | null>
+}
+export interface RegistrationTeamTable {
+  id: string
+  tournament_id: string
+  owner_id: string
+  companion_id: string
+  status: string
+  slot: number | null
+  data: ColumnType<RegistrationTeam, string, string>
+}
+export interface RegistrationOperationTable {
+  tournament_id: string
+  operation_id: string
+  intent: string
+  team_id: string
+  data: ColumnType<RegistrationOperation, string, string>
 }

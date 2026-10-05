@@ -5,16 +5,11 @@ import type { TournamentEncounter } from '../../domain/entities/TournamentEncoun
  * torneo (justa, ronda/arbol, equipos y heroes, y la sala de Combat vinculada
  * si ya existe).
  *
- * HU-83 (Management#465) depende formalmente de HU-78 (Management#469, genera
- * el bracket) y de HU-85 (Management#470/#485/#486, vincula cada justa con una
- * sala de Combat real). NINGUNA de las dos existe todavia en codigo. Este
- * puerto es el punto de reemplazo exacto: el dia que HU-78 exista, el
- * adaptador real implementa este mismo contrato leyendo el bracket generado en
- * lugar de devolver datos fijos.
- *
- * Hoy solo lo satisface `DevFixtureTournamentEncounterSource`, un doble
- * explicito de desarrollo: NO es el bracket real, documentado como tal en su
- * propio nombre de fichero y clase.
+ * `PersistedBracketEncounterSource` lee el snapshot publicado por HU-78.
+ * Los equipos de inscripción conocidos van en `bracketMetadata`; el roster
+ * de héroes y la sala solo aparecen cuando exista la integración HU-85.
+ * `DevFixtureTournamentEncounterSource` permanece como doble explícito de
+ * regresión y no se selecciona en la composición de la aplicación.
  */
 export interface TournamentEncounterSourcePort {
   /**

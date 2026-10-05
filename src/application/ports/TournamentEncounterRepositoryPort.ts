@@ -9,6 +9,7 @@ import type { TournamentEncounter } from '../../domain/entities/TournamentEncoun
  * `tournament_combat_events`.
  */
 export interface TournamentEncounterRepositoryPort {
+  findLinked?(): Promise<readonly TournamentEncounter[]>
   findAllByTournament(tournamentId: string): Promise<readonly TournamentEncounter[]>
 
   findOne(tournamentId: string, encounterId: string): Promise<TournamentEncounter | null>

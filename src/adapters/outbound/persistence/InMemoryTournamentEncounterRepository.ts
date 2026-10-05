@@ -1,5 +1,6 @@
 import type { CombatEventPage, CombatEventRecord } from '../../../domain/entities/CombatEventRecord'
 import type { TournamentEncounter } from '../../../domain/entities/TournamentEncounter'
+import { mergeArchivedEncounter } from '../../../domain/archive'
 import type { TournamentEncounterRepositoryPort } from '../../../application/ports/TournamentEncounterRepositoryPort'
 
 const key = (tournamentId: string, encounterId: string): string => `${tournamentId}:${encounterId}`
@@ -14,6 +15,13 @@ const key = (tournamentId: string, encounterId: string): string => `${tournament
 export class InMemoryTournamentEncounterRepository implements TournamentEncounterRepositoryPort {
   private readonly encounters = new Map<string, TournamentEncounter>()
   private readonly events = new Map<string, CombatEventRecord[]>()
+  findLinked(): Promise<readonly TournamentEncounter[]> {
+    return Promise.resolve(
+      [...this.encounters.values()].filter(
+        (e) => e.combatRoomId !== null && (e.status !== 'FINISHED' || !e.logComplete),
+      ),
+    )
+  }
 
   findAllByTournament(tournamentId: string): Promise<readonly TournamentEncounter[]> {
     return Promise.resolve(
@@ -26,7 +34,8 @@ export class InMemoryTournamentEncounterRepository implements TournamentEncounte
   }
 
   save(encounter: TournamentEncounter): Promise<void> {
-    this.encounters.set(key(encounter.tournamentId, encounter.encounterId), encounter)
+    const id = key(encounter.tournamentId, encounter.encounterId)
+    this.encounters.set(id, mergeArchivedEncounter(this.encounters.get(id) ?? null, encounter))
 
     return Promise.resolve()
   }

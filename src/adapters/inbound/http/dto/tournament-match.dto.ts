@@ -5,6 +5,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger'
 import type { CombatEventPage } from '../../../../domain/entities/CombatEventRecord'
 import type {
   TournamentEncounter,
+  EncounterBracketMetadata,
   TournamentEncounterTeam,
   TournamentMatchResult,
 } from '../../../../domain/entities/TournamentEncounter'
@@ -36,6 +37,14 @@ export interface MatchResultResponse {
 }
 
 export interface MatchSummaryResponse {
+  readonly encounterId?: string
+  readonly bracketTrack?: EncounterBracketMetadata['bracketTrack']
+  readonly registeredTeams?: EncounterBracketMetadata['registeredTeams']
+  readonly preparationStatus?: string
+  readonly combatRoomId?: string | null
+  readonly lastSyncedSeq?: number
+  readonly engineLastSeq?: number | null
+  readonly syncedAt?: string | null
   readonly tournamentId: string
   readonly matchId: string
   readonly round: number
@@ -77,6 +86,14 @@ const toResultResponse = (result: TournamentMatchResult | null): MatchResultResp
       }
 
 export const toMatchSummaryResponse = (encounter: TournamentEncounter): MatchSummaryResponse => ({
+  ...(encounter.bracketMetadata === undefined
+    ? {}
+    : {
+        ...encounter.bracketMetadata,
+        encounterId: encounter.encounterId,
+        combatRoomId: encounter.combatRoomId,
+        lastSyncedSeq: encounter.lastSyncedSeq,
+      }),
   tournamentId: encounter.tournamentId,
   matchId: encounter.encounterId,
   round: encounter.round,

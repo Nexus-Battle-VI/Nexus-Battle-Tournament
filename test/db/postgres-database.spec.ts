@@ -1,4 +1,4 @@
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
+import { startTestPostgres } from '../support/postgres'
 import { sql, type Kysely, type Migration } from 'kysely'
 
 import type { Database } from '../../src/adapters/outbound/persistence/schema'
@@ -17,12 +17,12 @@ import {
  * lugar de darse por buena.
  */
 describe('Persistencia PostgreSQL', () => {
-  let container: StartedPostgreSqlContainer
+  let container: Awaited<ReturnType<typeof startTestPostgres>>
   let db: Kysely<Database>
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer('postgres:17-alpine').start()
-    db = createDatabase({ connectionString: container.getConnectionUri() })
+    container = await startTestPostgres()
+    db = createDatabase({ connectionString: container.connectionString })
   }, 120_000)
 
   afterAll(async () => {
@@ -95,7 +95,7 @@ describe('Persistencia PostgreSQL', () => {
     const errores: Error[] = []
     const aplicacion = 'prueba-conexion-ociosa'
     const propia = createDatabase({
-      connectionString: `${container.getConnectionUri()}?application_name=${aplicacion}`,
+      connectionString: `${container.connectionString}?application_name=${aplicacion}`,
       onIdleError: (error) => errores.push(error),
     })
 

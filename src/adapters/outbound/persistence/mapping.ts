@@ -18,6 +18,9 @@ export const encounterToRow = (
   encounter: TournamentEncounter,
 ): Omit<Insertable<TournamentEncounterTable>, 'created_at' | 'updated_at'> => ({
   tournament_id: encounter.tournamentId,
+  ...(encounter.bracketMetadata === undefined
+    ? {}
+    : { bracket_metadata: JSON.stringify(encounter.bracketMetadata) }),
   encounter_id: encounter.encounterId,
   round: encounter.round,
   bracket_label: encounter.bracketLabel,
@@ -33,6 +36,7 @@ export const encounterToRow = (
 
 export const rowToEncounter = (row: Selectable<TournamentEncounterTable>): TournamentEncounter => ({
   tournamentId: row.tournament_id,
+  ...(row.bracket_metadata == null ? {} : { bracketMetadata: row.bracket_metadata }),
   encounterId: row.encounter_id,
   round: row.round,
   bracketLabel: row.bracket_label,
