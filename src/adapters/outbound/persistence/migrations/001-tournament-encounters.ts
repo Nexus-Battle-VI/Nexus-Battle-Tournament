@@ -12,7 +12,10 @@ import { sql, type Kysely, type Migration } from 'kysely'
  * Combat. La restriccion unica `(tournament_id, encounter_id, seq)` es la
  * barrera, a nivel de motor, contra reescribir o duplicar un evento ya
  * guardado: un `INSERT` con la misma clave falla con una violacion de
- * unicidad, que el adaptador interpreta como "ya lo tengo" (CA-03).
+ * unicidad, que el adaptador interpreta como "ya lo tengo" (CA-03). Esa misma
+ * restriccion unica YA es el indice que ordena `(tournament_id, encounter_id,
+ * seq)`, asi que no hace falta un segundo indice normal con las mismas
+ * columnas para leer la pagina de eventos en orden.
  */
 export const migration001TournamentEncounters: Migration = {
   up: async (db: Kysely<unknown>): Promise<void> => {
@@ -55,17 +58,13 @@ export const migration001TournamentEncounters: Migration = {
       .execute()
 
     // Barrera de unicidad/orden: el guardian real de CA-03, no solo el dominio.
+    // Cubre tambien la lectura paginada en orden: no hace falta otro indice
+    // normal con las mismas columnas.
     await db.schema
       .createIndex('tournament_combat_events_seq_unique')
       .on('tournament_combat_events')
       .columns(['tournament_id', 'encounter_id', 'seq'])
       .unique()
-      .execute()
-
-    await db.schema
-      .createIndex('tournament_combat_events_read_order')
-      .on('tournament_combat_events')
-      .columns(['tournament_id', 'encounter_id', 'seq'])
       .execute()
   },
 

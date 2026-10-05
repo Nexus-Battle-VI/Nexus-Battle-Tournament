@@ -102,6 +102,21 @@ describe('GET /api/v1/tournaments/:tournamentId/matches (HU-83)', () => {
     expect(byLabel.E4!.status).toBe('WAITING_PARTICIPANTS')
   })
 
+  /**
+   * El fixture de desarrollo (`DevFixtureTournamentEncounterSource`) solo
+   * fabrica justas para una lista fija de `tournamentId` conocidos; un id
+   * inventado se trata como "torneo sin justas todavia", no como un torneo
+   * valido con datos fabricados.
+   */
+  it('lista vacia para un tournamentId que el fixture de desarrollo no reconoce', async () => {
+    const response = await auth(
+      request(app.getHttpServer()).get('/api/v1/tournaments/torneo-inventado/matches'),
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.body).toEqual([])
+  })
+
   it('dos torneos simultaneos no mezclan sus justas (CA-01)', async () => {
     const t1 = await auth(request(app.getHttpServer()).get('/api/v1/tournaments/T-ca01-a/matches'))
     const t2 = await auth(request(app.getHttpServer()).get('/api/v1/tournaments/T-ca01-b/matches'))
@@ -180,18 +195,27 @@ describe('GET /api/v1/tournaments/:tournamentId/matches (HU-83)', () => {
     expect(response.status).toBe(404)
   })
 
-  /** CA-06: identificador que pertenece a otro torneo. */
-  it('responde 404 cuando el identificador de justa pertenece a otro torneo', async () => {
+  /**
+   * CA-06: un `matchId` que SI existe, pero en un torneo HERMANO, con la
+   * MISMA etiqueta de bracket ("E2" en T-cruzado-A y en T-cruzado-B). Pedir
+   * un `matchId` inventado (como antes) es indistinguible de un simple "no
+   * encontrado" y no detectaria una regresion que quitara el filtro por
+   * `tournamentId` de la busqueda; esto si lo detectaria, porque E2 de
+   * T-cruzado-B existe y podria "filtrarse" hacia T-cruzado-A.
+   */
+  it('nunca devuelve el registro de la justa homonima de otro torneo (CA-06)', async () => {
     const server = app.getHttpServer()
-    // Siembra ambos torneos antes de probar la referencia cruzada.
+    // Siembra ambos torneos: los dos tienen su PROPIA E2.
     await auth(request(server).get('/api/v1/tournaments/T-cruzado-A/matches'))
     await auth(request(server).get('/api/v1/tournaments/T-cruzado-B/matches'))
 
-    const response = await auth(
-      request(server).get('/api/v1/tournaments/T-cruzado-A/matches/no-pertenece-a-A'),
-    )
+    const fromA = await auth(request(server).get('/api/v1/tournaments/T-cruzado-A/matches/E2'))
+    const fromB = await auth(request(server).get('/api/v1/tournaments/T-cruzado-B/matches/E2'))
 
-    expect(response.status).toBe(404)
+    expect(fromA.status).toBe(200)
+    expect(fromB.status).toBe(200)
+    expect(fromA.body.tournamentId).toBe('T-cruzado-A')
+    expect(fromB.body.tournamentId).toBe('T-cruzado-B')
   })
 
   it('consultar el detalle dos veces conserva el mismo resultado (CA-03, lectura no destructiva)', async () => {

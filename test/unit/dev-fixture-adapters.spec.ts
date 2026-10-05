@@ -24,6 +24,19 @@ describe('DevFixtureTournamentEncounterSource (fixture de desarrollo, no es el b
     expect(t1.find((e) => e.encounterId === 'E2')?.combatRoomId).toBe('room-T1-E2')
     expect(t2.find((e) => e.encounterId === 'E2')?.combatRoomId).toBe('room-T2-E2')
   })
+
+  /**
+   * Limitacion deliberada del fixture (ver el comentario en la clase): solo
+   * fabrica justas para una lista fija de `tournamentId` de desarrollo
+   * conocidos. Un id inventado no debe aparentar ser un torneo valido.
+   */
+  it('devuelve una lista vacia para un tournamentId que no esta en la lista conocida', async () => {
+    const encounters = await new DevFixtureTournamentEncounterSource().listEncounters(
+      'torneo-inventado-que-no-existe',
+    )
+
+    expect(encounters).toEqual([])
+  })
 })
 
 describe('DevFixtureCombatRecordAdapter (fixture de desarrollo, no es Combat real)', () => {

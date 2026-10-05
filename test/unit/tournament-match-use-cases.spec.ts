@@ -152,7 +152,24 @@ class StubCombatRecord implements CombatRecordPort {
 }
 
 describe('EnsureTournamentMatchesSeeded', () => {
-  it('siembra las justas de la fuente y proyecta Combat solo una vez por torneo', async () => {
+  it('siembra las justas de la fuente una sola vez por torneo', async () => {
+    const repository = new InMemoryTournamentEncounterRepository()
+    const source = new StubEncounterSource()
+    const listEncountersSpy = jest.spyOn(source, 'listEncounters')
+    const useCase = new EnsureTournamentMatchesSeeded(repository, source, new StubCombatRecord())
+
+    await useCase.execute('T1')
+    await useCase.execute('T1')
+    await useCase.execute('T1')
+
+    const encounters = await repository.findAllByTournament('T1')
+    expect(encounters).toHaveLength(4)
+    // El sembrado (leer la fuente y crear las filas) ocurre una sola vez: las
+    // invocaciones siguientes encuentran justas ya persistidas.
+    expect(listEncountersSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('reintenta la proyeccion de Combat en cada invocacion, pero no una justa ya FINISHED', async () => {
     const repository = new InMemoryTournamentEncounterRepository()
     const source = new StubEncounterSource()
     const combat = new StubCombatRecord()
@@ -160,13 +177,14 @@ describe('EnsureTournamentMatchesSeeded', () => {
     const useCase = new EnsureTournamentMatchesSeeded(repository, source, combat)
 
     await useCase.execute('T1')
-    await useCase.execute('T1')
-
-    const encounters = await repository.findAllByTournament('T1')
-    expect(encounters).toHaveLength(4)
-    // Dos justas con sala vinculada (E2, E3): una llamada de proyeccion cada
-    // una, y no se repite en la segunda invocacion porque ya habia datos.
+    // Primera invocacion: dos justas con sala vinculada (E2 sigue en curso,
+    // E3 llega a FINISHED), una llamada de proyeccion cada una.
     expect(readSpy).toHaveBeenCalledTimes(2)
+
+    await useCase.execute('T1')
+    // Segunda invocacion: E3 ya es terminal y no se reintenta; E2 todavia no
+    // esta FINISHED, asi que SI se reintenta.
+    expect(readSpy).toHaveBeenCalledTimes(3)
   })
 
   it('no mezcla las justas de dos torneos simultaneos (CA-01)', async () => {
@@ -185,6 +203,130 @@ describe('EnsureTournamentMatchesSeeded', () => {
     expect(t2.every((e) => e.tournamentId === 'T2')).toBe(true)
     expect(t1).toHaveLength(4)
     expect(t2).toHaveLength(4)
+  })
+})
+
+/**
+ * Doble de Combat MUTABLE: a diferencia de `StubCombatRecord` (fijo), permite
+ * simular que la sala de la justa "E2" avanza ENTRE dos consultas sucesivas
+ * de Tournament, tal como ocurriria con un combate real que progresa mientras
+ * nadie lo mira. Reconoce cualquier sala con el mismo formato que
+ * `StubCombatRecord` (necesario porque `EnsureTournamentMatchesSeeded`
+ * reproyecta TODAS las justas pendientes de un torneo, no solo "E2"); "E3"
+ * se mantiene fija, igual que en `StubCombatRecord`, y solo "E2" es mutable.
+ */
+class AdvancingCombatRecord implements CombatRecordPort {
+  private finished = false
+
+  /** Simula que Combat cerro la sala "E2", como si hubiera ocurrido tras la primera consulta. */
+  finish(): void {
+    this.finished = true
+  }
+
+  readRecord(roomId: string, afterSeq: number): Promise<CombatRoomRecord> {
+    const match = /^room-(.+)-(E\d+)$/.exec(roomId)
+    if (match === null) {
+      throw new Error('sala desconocida')
+    }
+
+    const tournamentId = match[1]!
+    const encounterId = match[2]!
+
+    const allEvents = [
+      {
+        roomId,
+        seq: 1,
+        type: 'battleStarted',
+        occurredAt: new Date('2026-09-30T20:00:00Z'),
+        payload: {},
+      },
+    ]
+
+    if (encounterId !== 'E2' || this.finished) {
+      const finishedEvents = [
+        ...allEvents,
+        {
+          roomId,
+          seq: 2,
+          type: 'battleFinished',
+          occurredAt: new Date('2026-09-30T20:05:00Z'),
+          payload: { winner: 'A' },
+        },
+      ]
+
+      return Promise.resolve({
+        roomId,
+        tournamentId,
+        encounterId,
+        status: 'FINISHED',
+        startedAt: allEvents[0]!.occurredAt,
+        result: {
+          winnerTeamLabel: 'A',
+          reason: 'OPPONENT_DEFEATED',
+          outcome: 'VICTORY',
+          finishedAt: new Date('2026-09-30T20:05:00Z'),
+        },
+        afterSeq,
+        lastSeq: finishedEvents.length,
+        events: finishedEvents.filter((event) => event.seq > afterSeq),
+      })
+    }
+
+    return Promise.resolve({
+      roomId,
+      tournamentId,
+      encounterId,
+      status: 'IN_BATTLE',
+      startedAt: allEvents[0]!.occurredAt,
+      result: null,
+      afterSeq,
+      lastSeq: allEvents.length,
+      events: allEvents.filter((event) => event.seq > afterSeq),
+    })
+  }
+}
+
+/**
+ * Regresion: antes de la correccion, `EnsureTournamentMatchesSeeded` solo
+ * proyectaba Combat la PRIMERA vez que se consultaba un torneo (cuando
+ * sembraba). Una justa que avanzaba en Combat despues de esa primera consulta
+ * quedaba congelada para siempre en el listado/detalle de Tournament. Este
+ * test falla con ese codigo viejo: la segunda consulta devolveria todavia
+ * `IN_PROGRESS`.
+ */
+describe('Regresion: la proyeccion de Combat no debe congelarse tras la primera consulta', () => {
+  it('una justa que Combat finaliza DESPUES de la primera consulta se refleja FINISHED en la segunda', async () => {
+    const repository = new InMemoryTournamentEncounterRepository()
+    const source = new StubEncounterSource()
+    const combat = new AdvancingCombatRecord()
+    const useCase = new GetTournamentMatchDetail(repository, source, combat)
+
+    const first = await useCase.execute('T1', 'E2', 0)
+    expect(first.encounter.status).toBe(TournamentMatchStatus.InProgress)
+    expect(first.encounter.result).toBeNull()
+
+    // Combat cierra la sala DESPUES de la primera consulta de Tournament.
+    combat.finish()
+
+    const second = await useCase.execute('T1', 'E2', 0)
+    expect(second.encounter.status).toBe(TournamentMatchStatus.Finished)
+    expect(second.encounter.result?.winnerTeamLabel).toBe('A')
+    expect(second.encounter.closedAt).not.toBeNull()
+  })
+
+  it('tambien se refleja en ListTournamentMatches, no solo en el detalle', async () => {
+    const repository = new InMemoryTournamentEncounterRepository()
+    const source = new StubEncounterSource()
+    const combat = new AdvancingCombatRecord()
+    const useCase = new ListTournamentMatches(repository, source, combat)
+
+    const first = await useCase.execute('T1')
+    expect(first.find((m) => m.encounterId === 'E2')?.status).toBe(TournamentMatchStatus.InProgress)
+
+    combat.finish()
+
+    const second = await useCase.execute('T1')
+    expect(second.find((m) => m.encounterId === 'E2')?.status).toBe(TournamentMatchStatus.Finished)
   })
 })
 
@@ -428,16 +570,30 @@ describe('GetTournamentMatchDetail (CA-02, CA-03, CA-04, CA-06)', () => {
     )
   })
 
-  /** CA-06: identificador de justa que pertenece a OTRO torneo. */
-  it('rechaza el identificador de una justa de otro torneo sin exponer su registro', async () => {
+  /**
+   * CA-06: un `matchId` que SI existe, pero en un torneo HERMANO, con la
+   * MISMA etiqueta de bracket ("E2" en T1 y en T2 a la vez). A diferencia de
+   * pedir un `matchId` inventado (indistinguible de un simple "no
+   * encontrado"), esto detectaria una regresion real: que alguien quite el
+   * filtro por `tournamentId` de la busqueda y T1 termine devolviendo (o
+   * mezclando) el registro de T2.
+   */
+  it('nunca devuelve ni mezcla el registro de la justa homonima de otro torneo (CA-06)', async () => {
     const useCase = build()
 
-    await useCase.execute('T1', 'E2', 0) // siembra T1
-    await useCase.execute('T2', 'E2', 0) // siembra T2, independiente
+    await useCase.execute('T1', 'E2', 0) // siembra y proyecta T1
+    await useCase.execute('T2', 'E2', 0) // siembra y proyecta T2; T2 tiene su PROPIA E2
 
-    await expect(useCase.execute('T1', 'E2:no-existe-en-t1', 0)).rejects.toBeInstanceOf(
-      TournamentMatchNotFoundError,
-    )
+    // Se vuelve a pedir T1/E2 DESPUES de que T2/E2 tambien existe: si el
+    // filtro por tournamentId se perdiera, esta sería la consulta que lo
+    // revelaría.
+    const fromT1 = await useCase.execute('T1', 'E2', 0)
+    const fromT2 = await useCase.execute('T2', 'E2', 0)
+
+    expect(fromT1.encounter.tournamentId).toBe('T1')
+    expect(fromT1.encounter.combatRoomId).toBe('room-T1-E2')
+    expect(fromT2.encounter.tournamentId).toBe('T2')
+    expect(fromT2.encounter.combatRoomId).toBe('room-T2-E2')
   })
 
   it('una justa esperando participantes no tiene equipos ni sala vinculada', async () => {

@@ -28,9 +28,33 @@ import type { TournamentEncounterSourcePort } from '../../../application/ports/T
  * Reemplazo previsto: un adaptador que implemente el mismo
  * `TournamentEncounterSourcePort` leyendo el agregado de bracket real que
  * produzca HU-78. Ningun caso de uso que consuma el puerto deberia cambiar.
+ *
+ * LIMITACION DELIBERADA (no es el comportamiento final): mientras no exista
+ * HU-78, no hay forma de saber si un `tournamentId` corresponde a un torneo
+ * de verdad. Para que un id inventado no parezca un torneo valido, este
+ * fixture solo "conoce" la lista fija de abajo (los mismos ids que usan las
+ * pruebas de HU-83); cualquier otro `tournamentId` devuelve una lista vacia,
+ * exactamente lo que vera un torneo real todavia sin justas.
  */
+const KNOWN_DEV_TOURNAMENT_IDS: ReadonlySet<string> = new Set([
+  'T1',
+  'T2',
+  'T-ca01-a',
+  'T-ca01-b',
+  'T-detail',
+  'T-detail-2',
+  'T-pagina',
+  'T-cruzado-A',
+  'T-cruzado-B',
+  'T-reconsulta',
+])
+
 export class DevFixtureTournamentEncounterSource implements TournamentEncounterSourcePort {
   listEncounters(tournamentId: string): Promise<readonly TournamentEncounter[]> {
+    if (!KNOWN_DEV_TOURNAMENT_IDS.has(tournamentId)) {
+      return Promise.resolve([])
+    }
+
     const base: TournamentEncounter = {
       tournamentId,
       encounterId: 'E1',
