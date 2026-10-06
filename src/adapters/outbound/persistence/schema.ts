@@ -99,6 +99,17 @@ export interface Database {
   tournament_admin_operations: { operation_id: string; intent: string; tournament_id: string }
   tournament_encounters: TournamentEncounterTable
   tournament_combat_events: TournamentCombatEventTable
+  tournament_encounter_actions: TournamentEncounterActionTable
+}
+export interface TournamentEncounterActionTable {
+  readonly action_id: string
+  readonly tournament_id: string
+  readonly encounter_id: string
+  readonly action: 'PREPARE' | 'START'
+  readonly actor: string
+  readonly operation_id: string
+  readonly combat_room_id: string
+  readonly occurred_at: ColumnType<Date, Date, never>
 }
 export interface RegistrationTournamentTable {
   id: string
