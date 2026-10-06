@@ -11,6 +11,8 @@ import { Pool } from 'pg'
 
 import type { Database } from '../../adapters/outbound/persistence/schema'
 import { migration001TournamentEncounters } from '../../adapters/outbound/persistence/migrations/001-tournament-encounters'
+import { migration as registration } from '../../adapters/outbound/persistence/migrations/002-tournament-registration'
+import { migration as bracket } from '../../adapters/outbound/persistence/migrations/003-tournament-bracket'
 
 export interface DatabaseOptions {
   readonly connectionString: string
@@ -71,6 +73,8 @@ export const createDatabase = (options: DatabaseOptions): Kysely<Database> => {
  */
 export const MIGRATIONS: Readonly<Record<string, Migration>> = {
   '001-tournament-encounters': migration001TournamentEncounters,
+  '002-tournament-registration': registration,
+  '003-tournament-bracket': bracket,
 }
 
 export interface MigrationOutcome {

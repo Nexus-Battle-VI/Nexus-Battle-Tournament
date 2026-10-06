@@ -1,7 +1,7 @@
 # Arquitectura de Tournament
 
 Fuente de la decisión: [ADR-022](https://github.com/Nexus-Battle-VI/Nexus-Battle-Infrastructure/blob/develop/docs/adr/ADR-022-sprint-3-bounded-contexts.md).
-Este documento describe lo **previsto**. Los contratos exactos se publican como OpenAPI en `Nexus-Battle-Infrastructure/docs/contracts` antes de implementarse.
+Este documento distingue el incremento local HU-77/84/78/83 del ciclo de vida previsto. API, migraciones y límites del incremento: [torneos-v2.md](torneos-v2.md). La referencia común es `torneos-hu77-84-78-hu83-v2.0.0` en `Nexus-Battle-Infrastructure/docs/contracts`.
 
 ## Responsabilidad
 
@@ -17,9 +17,9 @@ Gestiona el ciclo de vida completo del torneo, que dura semanas y abarca muchas 
 ## Datos que posee
 
 - **Torneos**: fecha, estado y administrador que los crea. Solo se permite uno cada 91 días (§7.9 del documento oficial).
-- **Equipos inscritos**: exactamente 2 jugadores distintos, con nombre y avatar según la política de registro de HU-01. Estados: pendiente de pago y confirmado.
+- **Equipos inscritos**: exactamente dos jugadores distintos. Account valida nombre y avatar de un integrante; el compañero acepta desde su propia sesión. Estados: `AWAITING_CONSENT`, `PENDING_PAYMENT`, `PAYMENT_PENDING`, `COMPENSATING`, `CONFIRMED`, `CANCELLED`.
 - **Inscripciones y pagos de cupo**, con su `operationId`.
-- **Bracket** de 8 cupos. Los cupos vacíos los ocupan equipos de IA. Tiene dos árboles:
+- **Bracket** de ocho equipos humanos `CONFIRMED` y dieciséis jugadores distintos. La HU-78 vigente excluye IA y reemplaza la regla antigua del sprint. Tiene dos árboles:
 
   | Árbol       | Encuentros                          |
   | ----------- | ----------------------------------- |
@@ -35,7 +35,7 @@ Motor: **PostgreSQL**, base lógica `tournament` con usuario y credenciales prop
 
 - **El octavo cupo lo gana como mucho un equipo.** La confirmación de cupo bloquea el torneo con `SELECT ... FOR UPDATE`. El equipo que pierde la carrera no queda cobrado.
 - **Un jugador no está en dos equipos del mismo torneo**: índice único.
-- **Un torneo cada 91 días**: restricción sobre las fechas de los torneos.
+- **Inicios separados por 91 × 24 horas**: comparación global de `startsAt` UTC en ambos sentidos, protegida por restricción de exclusión SQL. La frontera exacta de 91 días es válida.
 - **Un resultado por justa**: confirmar dos veces devuelve el mismo resultado. Un resultado de otra sala se rechaza.
 - **Un premio por campeón**: `operation_id` único por entrega.
 - Importes `bigint` y estrictamente positivos. Nunca coma flotante para dinero.
@@ -76,13 +76,12 @@ Las llamadas salientes que mueven créditos o productos siguen el patrón de ADR
 
 ## Temporizadores
 
-Los vencimientos (por ejemplo, cupos pendientes de pago) usan un intervalo dentro del proceso, apagado por defecto, con reclamación durable en el almacén (`FOR UPDATE SKIP LOCKED`). El estado vive en la base: un reinicio retrasa un vencimiento, no lo pierde. La hora la fija siempre el servidor.
+El incremento usa reconciliadores cada cinco segundos para pagos/compensaciones y registros de salas ya vinculadas. Las intenciones y cursores viven en PostgreSQL; los bloqueos por torneo y las operaciones idempotentes permiten reanudar después de un reinicio. No hay caducidad inventada del cupo confirmado. La hora la fija el servidor. El driver `memory` es un doble y está prohibido en producción.
 
 ## Decisiones abiertas (Product Owner)
 
 - **Formato de la justa.** El documento dice «equipos de dos jugadores con un máximo de seis por batalla». Combat solo admite dos equipos iguales de 1 a 3.
-- Importe de la inscripción, quién la paga y reembolsos. El documento acepta «dinero real o créditos»; HU-84 habla de pasarela simulada.
-- Reparto del premio entre los dos miembros, y qué ocurre si gana un equipo de IA.
+- Importes concretos de cada torneo: los configura el administrador mediante `entryPolicy`. El contrato v2 fija pago por el creador y compensación tras cierre; `SIMULATED_MONEY` no mueve dinero real.
+- Reparto del premio entre los dos miembros, fuera del incremento.
 - Empates, incomparecencias, reprogramación y corrección de resultados.
-- Tabla exacta de origen y destino del bracket, y desde qué fecha cuentan los 91 días.
-- **Los equipos de IA dependen de JcE en Combat**, que todavía no tiene HU.
+- La tabla E1–E13/Final del contrato v2 se conserva como snapshot; su revisión funcional sigue pendiente. No habilita avance automático HU-80. La separación se calcula sobre `startsAt`, no sobre la apertura.

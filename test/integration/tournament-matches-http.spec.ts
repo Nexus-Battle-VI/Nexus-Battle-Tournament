@@ -12,13 +12,17 @@ import {
   type VerifiedIdentity,
 } from '../../src/application/ports/TokenVerifierPort'
 import { AppModule } from '../../src/infrastructure/bootstrap/app.module'
+import { TOURNAMENT_ENCOUNTER_SOURCE } from '../../src/application/ports/TournamentEncounterSourcePort'
+import { COMBAT_RECORD } from '../../src/application/ports/CombatRecordPort'
+import { DevFixtureTournamentEncounterSource } from '../../src/adapters/outbound/bracket/DevFixtureTournamentEncounterSource'
+import { DevFixtureCombatRecordAdapter } from '../../src/adapters/outbound/combat/DevFixtureCombatRecordAdapter'
 
 /**
  * Pruebas HTTP de HU-83 (Management#465): las dos rutas de consulta de
  * justas, con autenticacion JWT activa y persistencia en memoria (los
- * adaptadores de fuente de bracket/Combat son los dobles de desarrollo
- * reales que se registran en `AppModule`, no sustitutos de prueba: es
- * exactamente lo que corre hoy en desarrollo).
+ * adaptadores de fuente de bracket/Combat son los dobles históricos,
+ * seleccionados explícitamente por override. La composición de la aplicación
+ * usa bracket persistido y lectura HTTP de Combat).
  */
 const IDENTITY: VerifiedIdentity = {
   subject: 'participante-1',
@@ -61,6 +65,10 @@ describe('GET /api/v1/tournaments/:tournamentId/matches (HU-83)', () => {
     })
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(TOURNAMENT_ENCOUNTER_SOURCE)
+      .useValue(new DevFixtureTournamentEncounterSource())
+      .overrideProvider(COMBAT_RECORD)
+      .useValue(new DevFixtureCombatRecordAdapter())
       .overrideProvider(TOKEN_VERIFIER)
       .useValue(stubVerifier)
       .compile()

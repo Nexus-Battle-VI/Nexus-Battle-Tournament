@@ -48,6 +48,7 @@ describe('DevFixtureCombatRecordAdapter (fixture de desarrollo, no es Combat rea
     expect(record.tournamentId).toBe('T1')
     expect(record.encounterId).toBe('E2')
     expect(record.events.length).toBeGreaterThan(0)
+    expect(record.events.every((event) => event.roomId === record.roomId)).toBe(true)
   })
 
   it('informa una sala finalizada con resultado autoritativo', async () => {

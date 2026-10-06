@@ -47,6 +47,7 @@ describe('mapping de persistencia', () => {
     // "re-parsean" aqui para construir la fila tal como la devolveria el motor.
     const row: Selectable<TournamentEncounterTable> = {
       ...inserted,
+      bracket_metadata: null,
       combat_room_id: inserted.combat_room_id ?? null,
       started_at: inserted.started_at ?? null,
       closed_at: inserted.closed_at ?? null,
@@ -81,6 +82,7 @@ describe('mapping de persistencia', () => {
     const inserted = encounterToRow(encounter)
     const row: Selectable<TournamentEncounterTable> = {
       ...inserted,
+      bracket_metadata: null,
       combat_room_id: inserted.combat_room_id ?? null,
       started_at: inserted.started_at ?? null,
       closed_at: inserted.closed_at ?? null,

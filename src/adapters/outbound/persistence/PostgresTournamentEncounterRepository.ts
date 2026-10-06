@@ -1,4 +1,5 @@
-import type { Kysely } from 'kysely'
+import { sql, type Kysely } from 'kysely'
+import { mergeArchivedEncounter } from '../../../domain/archive'
 
 import type { CombatEventPage, CombatEventRecord } from '../../../domain/entities/CombatEventRecord'
 import type { TournamentEncounter } from '../../../domain/entities/TournamentEncounter'
@@ -21,6 +22,15 @@ import type { Database } from './schema'
  */
 export class PostgresTournamentEncounterRepository implements TournamentEncounterRepositoryPort {
   constructor(private readonly db: Kysely<Database>) {}
+  async findLinked(): Promise<readonly TournamentEncounter[]> {
+    const rows = await this.db
+      .selectFrom('tournament_encounters')
+      .selectAll()
+      .where('combat_room_id', 'is not', null)
+      .where((eb) => eb.or([eb('status', '!=', 'FINISHED'), eb('log_complete', '=', false)]))
+      .execute()
+    return rows.map(rowToEncounter)
+  }
 
   async findAllByTournament(tournamentId: string): Promise<readonly TournamentEncounter[]> {
     const rows = await this.db
@@ -44,27 +54,42 @@ export class PostgresTournamentEncounterRepository implements TournamentEncounte
   }
 
   async save(encounter: TournamentEncounter): Promise<void> {
-    const row = encounterToRow(encounter)
-
-    await this.db
-      .insertInto('tournament_encounters')
-      .values({ ...row, updated_at: new Date() })
-      .onConflict((oc) =>
-        oc.columns(['tournament_id', 'encounter_id']).doUpdateSet({
-          round: row.round,
-          bracket_label: row.bracket_label,
-          teams: row.teams,
-          status: row.status,
-          combat_room_id: row.combat_room_id,
-          started_at: row.started_at,
-          closed_at: row.closed_at,
-          result: row.result,
-          last_synced_seq: row.last_synced_seq,
-          log_complete: row.log_complete,
-          updated_at: new Date(),
-        }),
+    await this.db.transaction().execute(async (tx) => {
+      const lock = JSON.stringify([encounter.tournamentId, encounter.encounterId])
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${lock},0))`.execute(tx)
+      const previous = await tx
+        .selectFrom('tournament_encounters')
+        .selectAll()
+        .where('tournament_id', '=', encounter.tournamentId)
+        .where('encounter_id', '=', encounter.encounterId)
+        .forUpdate()
+        .executeTakeFirst()
+      const row = encounterToRow(
+        mergeArchivedEncounter(previous === undefined ? null : rowToEncounter(previous), encounter),
       )
-      .execute()
+      await tx
+        .insertInto('tournament_encounters')
+        .values({ ...row, updated_at: new Date() })
+        .onConflict((oc) =>
+          oc.columns(['tournament_id', 'encounter_id']).doUpdateSet({
+            round: row.round,
+            ...(row.bracket_metadata === undefined
+              ? {}
+              : { bracket_metadata: row.bracket_metadata }),
+            bracket_label: row.bracket_label,
+            teams: row.teams,
+            status: row.status,
+            combat_room_id: row.combat_room_id,
+            started_at: row.started_at,
+            closed_at: row.closed_at,
+            result: row.result,
+            last_synced_seq: row.last_synced_seq,
+            log_complete: row.log_complete,
+            updated_at: new Date(),
+          }),
+        )
+        .execute()
+    })
   }
 
   async appendEvents(events: readonly CombatEventRecord[]): Promise<void> {

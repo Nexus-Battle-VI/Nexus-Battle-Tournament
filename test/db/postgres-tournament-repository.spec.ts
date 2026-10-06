@@ -1,4 +1,4 @@
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
+import { startTestPostgres } from '../support/postgres'
 import type { Kysely } from 'kysely'
 
 import type { Database } from '../../src/adapters/outbound/persistence/schema'
@@ -18,13 +18,13 @@ import type { CombatEventRecord } from '../../src/domain/entities/CombatEventRec
  * evento ya guardado (CA-03).
  */
 describe('PostgresTournamentEncounterRepository', () => {
-  let container: StartedPostgreSqlContainer
+  let container: Awaited<ReturnType<typeof startTestPostgres>>
   let db: Kysely<Database>
   let repository: PostgresTournamentEncounterRepository
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer('postgres:17-alpine').start()
-    db = createDatabase({ connectionString: container.getConnectionUri() })
+    container = await startTestPostgres()
+    db = createDatabase({ connectionString: container.connectionString })
     const outcome = await migrateToLatest(db)
     if (outcome.error !== undefined) {
       throw outcome.error instanceof Error ? outcome.error : new Error('La migracion fallo.')

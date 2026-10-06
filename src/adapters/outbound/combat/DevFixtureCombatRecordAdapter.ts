@@ -12,7 +12,8 @@ import {
  *
  * Implementa `CombatRecordPort` con datos de ejemplo fijos en lugar de llamar
  * a `GET /api/internal/v1/combat/tournament-rooms/{roomId}/record?afterSeq=N`,
- * ruta que todavia no existe en Combat (Management#517, Enabler pendiente).
+ * Este doble histórico se selecciona explícitamente en pruebas; la aplicación
+ * usa `HttpCombatRecordAdapter` para el contrato publicado de Combat.
  *
  * El `roomId` de este doble codifica torneo y justa
  * (`room-<tournamentId>-<encounterId>`) solo para que el stub pueda construir
@@ -57,7 +58,9 @@ export class DevFixtureCombatRecordAdapter implements CombatRecordPort {
       )
     }
 
-    const events = fixture.events.filter((event) => event.seq > afterSeq)
+    const events = fixture.events
+      .filter((event) => event.seq > afterSeq)
+      .map((event) => ({ ...event, roomId }))
 
     return Promise.resolve({
       roomId,
