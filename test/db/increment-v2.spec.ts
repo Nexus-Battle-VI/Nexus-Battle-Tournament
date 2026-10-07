@@ -27,19 +27,28 @@ describe('Combinación HU-77/84/78/83 en PostgreSQL real aislado', () => {
     const f = fixture(new PostgresRegistrationRepository(db), FREE_POLICY),
       t = await f.create()
     for (let n = 0; n < 8; n++) await f.confirm(t.id, n)
-    await db
-      .deleteFrom('registration_members')
-      .where('tournament_id', '=', t.id)
-      .where('player_id', '=', 'q7')
-      .execute()
+    await expect(
+      db
+        .deleteFrom('registration_members')
+        .where('tournament_id', '=', t.id)
+        .where('player_id', '=', 'q7')
+        .execute(),
+    ).rejects.toThrow('INVALID_TEAM_MEMBERS')
     // Publicación reconstruye pertenencias dentro de la misma transacción; la comprobación SQL directa sigue siendo obligatoria.
     const snapshot = generateBracket(await f.repo.read(t.id), 'direct', 'admin', f.clock.now())
     await expect(
-      db
-        .updateTable('tournaments')
-        .set({ bracket: JSON.stringify(snapshot) })
-        .where('id', '=', t.id)
-        .execute(),
+      db.transaction().execute(async (tx) => {
+        await tx
+          .deleteFrom('registration_members')
+          .where('tournament_id', '=', t.id)
+          .where('player_id', '=', 'q7')
+          .execute()
+        await tx
+          .updateTable('tournaments')
+          .set({ bracket: JSON.stringify(snapshot) })
+          .where('id', '=', t.id)
+          .execute()
+      }),
     ).rejects.toThrow('INVALID_BRACKET_ROSTER')
     expect(
       await new PostgresTournamentEncounterRepository(db).findAllByTournament(t.id),
@@ -190,6 +199,10 @@ describe('Combinación HU-77/84/78/83 en PostgreSQL real aislado', () => {
       '002-tournament-registration',
       '003-tournament-bracket',
       '004-tournament-admin-actions',
+      '006-tournament-mode-members-progression',
+      '007-tournament-round-acceptance-resolution',
+      '008-tournament-external-links',
+      '009-tournament-broadcast',
     ])
     expect(await archive.findOne(original.tournamentId, original.encounterId)).toEqual(original)
     const f = fixture(new PostgresRegistrationRepository(db))
@@ -214,6 +227,10 @@ describe('Combinación HU-77/84/78/83 en PostgreSQL real aislado', () => {
       '002-tournament-registration',
       '003-tournament-bracket',
       '004-tournament-admin-actions',
+      '006-tournament-mode-members-progression',
+      '007-tournament-round-acceptance-resolution',
+      '008-tournament-external-links',
+      '009-tournament-broadcast',
     ])
   })
   it('conserva registro/consentimientos/recibos al reconstruir adaptadores', async () => {

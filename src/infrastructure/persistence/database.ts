@@ -14,6 +14,11 @@ import { migration001TournamentEncounters } from '../../adapters/outbound/persis
 import { migration as registration } from '../../adapters/outbound/persistence/migrations/002-tournament-registration'
 import { migration as bracket } from '../../adapters/outbound/persistence/migrations/003-tournament-bracket'
 import { migration as adminActions } from '../../adapters/outbound/persistence/migrations/004-tournament-admin-actions'
+import { migration as modeMembers } from '../../adapters/outbound/persistence/migrations/006-tournament-mode-members-progression'
+import { migration as acceptance } from '../../adapters/outbound/persistence/migrations/007-tournament-round-acceptance-resolution'
+
+import * as externalLinks from '../../adapters/outbound/persistence/migrations/008-tournament-external-links'
+import * as broadcast from '../../adapters/outbound/persistence/migrations/009-tournament-broadcast'
 
 export interface DatabaseOptions {
   readonly connectionString: string
@@ -77,6 +82,10 @@ export const MIGRATIONS: Readonly<Record<string, Migration>> = {
   '002-tournament-registration': registration,
   '003-tournament-bracket': bracket,
   '004-tournament-admin-actions': adminActions,
+  '006-tournament-mode-members-progression': modeMembers,
+  '007-tournament-round-acceptance-resolution': acceptance,
+  '008-tournament-external-links': externalLinks,
+  '009-tournament-broadcast': broadcast,
 }
 
 export interface MigrationOutcome {

@@ -1,6 +1,13 @@
+import { randomUUID } from 'node:crypto'
+import type { RoundWindow, ACCEPTANCE_POLICY } from './match-acceptance'
 import {
   CONTRACT_VERSION,
   requireRule,
+  teamMemberIds,
+  teamConsented,
+  MODALITIES_CONTRACT_VERSION,
+  type TournamentMode,
+  type TeamSize,
   type TeamAvatar,
   type RegistrationTournament,
 } from './registration'
@@ -14,7 +21,7 @@ export interface BracketSeed {
   teamId: string
   name: string
   avatar: TeamAvatar
-  memberIds: [string, string]
+  memberIds: string[]
 }
 interface Destination {
   matchId: MatchId
@@ -31,7 +38,11 @@ export interface BracketMatch {
   destinations: { winner: Destination | null; loser: Destination | null }
 }
 export interface PublishedBracket {
-  version: 2
+  acceptancePolicy?: typeof ACCEPTANCE_POLICY | null
+  roundSchedule?: RoundWindow[]
+  version: 2 | 3
+  tournamentMode?: TournamentMode
+  teamSize?: TeamSize
   contractVersion: string
   tournamentId: string
   operationId: string
@@ -85,16 +96,13 @@ export const generateBracket = (
       (team, i) =>
         team.slot === i + 1 &&
         team.ownerId.trim() !== '' &&
-        team.companionId.trim() !== '' &&
-        team.consentAt !== null &&
-        team.consentVersion === 'team-registration-v2' &&
-        team.ownerConsentVersion === 'team-registration-v2' &&
+        teamConsented(team, t.teamSize ?? 2) &&
         team.entryReceipt !== null,
     ) &&
       new Set(teams.map((team) => team.id)).size === 8 &&
-      new Set(teams.flatMap((team) => [team.ownerId, team.companionId])).size === 16,
+      new Set(teams.flatMap(teamMemberIds)).size === 8 * (t.teamSize ?? 2),
     'INVALID_BRACKET_ROSTER',
-    'Los ocho cupos deben corresponder a dieciséis jugadores distintos.',
+    'Los ocho cupos deben tener el tamaño configurado y personas distintas.',
     409,
   )
   const seeds: BracketSeed[] = teams.map((team, i) => ({
@@ -102,7 +110,7 @@ export const generateBracket = (
     teamId: team.id,
     name: team.name,
     avatar: team.avatar,
-    memberIds: [team.ownerId, team.companionId],
+    memberIds: teamMemberIds(team),
   }))
   const matches: BracketMatch[] = BRACKET_DEFINITION.map((definition) => {
     const resolve = (source: MatchSource): string | null =>
@@ -113,7 +121,10 @@ export const generateBracket = (
     ]
     return {
       ...structuredClone(definition),
-      encounterId: `${t.id}:${definition.id}`,
+      encounterId:
+        t.contractVersion === MODALITIES_CONTRACT_VERSION
+          ? randomUUID()
+          : `${t.id}:${definition.id}`,
       teamIds,
       status: teamIds.every((id) => id !== null) ? 'TEAMS_RESOLVED' : 'WAITING',
       destinations: { winner: null, loser: null },
@@ -130,8 +141,14 @@ export const generateBracket = (
         }
     }
   return {
-    version: 2,
-    contractVersion: CONTRACT_VERSION,
+    ...(t.acceptancePolicy === undefined || t.acceptancePolicy === null
+      ? {}
+      : { acceptancePolicy: t.acceptancePolicy, roundSchedule: t.roundWindows }),
+    version: t.contractVersion === MODALITIES_CONTRACT_VERSION ? 3 : 2,
+    contractVersion: t.contractVersion ?? CONTRACT_VERSION,
+    ...(t.contractVersion === MODALITIES_CONTRACT_VERSION
+      ? { tournamentMode: t.tournamentMode ?? 'DUO', teamSize: t.teamSize ?? 2 }
+      : {}),
     tournamentId: t.id,
     operationId,
     publishedAt: now.toISOString(),
@@ -157,6 +174,12 @@ export const bracketEncounters = (bracket: PublishedBracket): TournamentEncounte
     lastSyncedSeq: 0,
     logComplete: false,
     bracketMetadata: {
+      ...(bracket.acceptancePolicy === undefined || bracket.acceptancePolicy === null
+        ? {}
+        : { acceptancePolicy: bracket.acceptancePolicy }),
+      ...(bracket.version === 3
+        ? { tournamentMode: bracket.tournamentMode, teamSize: bracket.teamSize }
+        : {}),
       bracketTrack: match.track,
       registeredTeams: match.teamIds.map((teamId) => {
         const team = bracket.seeds.find((seed) => seed.teamId === teamId)

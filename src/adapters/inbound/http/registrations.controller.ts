@@ -2,6 +2,8 @@ import { Body, Controller, Get, HttpCode, HttpException, Inject, Param, Post } f
 import { Type } from 'class-transformer'
 import {
   Allow,
+  IsArray,
+  ArrayMaxSize,
   Equals,
   IsBoolean,
   IsDateString,
@@ -32,7 +34,18 @@ class AvatarDto {
 class RegisterDto extends OperationDto {
   @IsString() @MinLength(1) @MaxLength(200) name!: string
   @IsDefined() @IsObject() @ValidateNested() @Type(() => AvatarDto) avatar!: AvatarDto
-  @IsString() @MinLength(1) @MaxLength(200) companionId!: string
+  @ValidateIf((_: object, value: unknown) => value !== undefined)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  companionId?: string
+  @ValidateIf((_: object, value: unknown) => value !== undefined)
+  @IsArray()
+  @ArrayMaxSize(2)
+  @IsString({ each: true })
+  @MinLength(1, { each: true })
+  @MaxLength(200, { each: true })
+  invitedMemberIds?: string[]
 }
 class ConsentDto extends OperationDto {
   @IsBoolean() accept!: boolean
@@ -54,6 +67,9 @@ class EntryDto extends OperationDto {
   card?: CardDto
 }
 class CreateDto extends OperationDto {
+  @ValidateIf((_: object, value: unknown) => value !== undefined)
+  @IsIn(['SOLO', 'DUO', 'TRIO'])
+  tournamentMode?: 'SOLO' | 'DUO' | 'TRIO'
   @IsString() @MinLength(1) @MaxLength(100) name!: string
   @Allow() entryPolicy?: unknown
   @IsOptional() @IsInt() @Min(0) @Max(Number.MAX_SAFE_INTEGER) entryFee?: number

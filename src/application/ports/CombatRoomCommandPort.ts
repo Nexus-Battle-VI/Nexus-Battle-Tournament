@@ -5,10 +5,12 @@
  */
 export interface CombatRoomTeamInput {
   readonly teamId: string
-  readonly memberIds: readonly [string, string]
+  readonly memberIds: readonly string[]
 }
 
 export interface CreateCombatRoomInput {
+  readonly tournamentMode?: TournamentMode
+  readonly teamSize?: TeamSize
   readonly operationId: string
   readonly tournamentId: string
   readonly encounterId: string
@@ -29,3 +31,4 @@ export interface CombatRoomCommandPort {
 }
 
 export const COMBAT_ROOM_COMMANDS = Symbol('CombatRoomCommandPort')
+import type { TeamSize, TournamentMode } from '../../domain/registration'
