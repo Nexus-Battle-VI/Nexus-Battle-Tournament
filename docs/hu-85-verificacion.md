@@ -2,7 +2,7 @@
 
 Fuente: [HU-85.4 #488](https://github.com/Nexus-Battle-VI/Nexus-Battle-Management/issues/488). Contrato verificado: `hu-85-tournament-encounter-administration-v1` (Infraestructura, **propuesta pendiente de revisión por los responsables**: nada de lo que sigue la presenta como aprobada).
 
-Estado de las tareas de HU-85 al redactar este informe: contrato HU-85.1 (Infrastructure #200) y backend HU-85.2 (Tournament #9) fusionados; Web HU-85.3 en revisión (Web #219). Combat se verificó con su `develop` del 2026-10-07 (incluye EN-036.2 y EN-036.3, que no tocan las rutas de torneo).
+Estado de las tareas de HU-85 al redactar este informe: contrato HU-85.1 (Infrastructure #200) y backend HU-85.2 (Tournament #9) fusionados; Web HU-85.3 fusionado (Web #219). Combat se verificó con su `develop` del 2026-10-07 (incluye EN-036.2 y EN-036.3, que no tocan las rutas de torneo).
 
 ## Qué es real y qué es de prueba
 
