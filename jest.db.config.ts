@@ -3,7 +3,9 @@ import type { Config } from 'jest'
 /**
  * Pruebas que necesitan una base de datos real, en su propia configuracion.
  *
- * Levantan PostgreSQL en un contenedor con Testcontainers. Meterlas en la suite
+ * Levantan PostgreSQL 17 con Testcontainers, o usan TEST_DATABASE_URL para crear
+ * bases aisladas en un servidor de pruebas con permiso CREATE DATABASE.
+ * Meterlas en la suite
  * por defecto obligaria a tener Docker a cualquiera que ejecute `npm test`, y
  * quien trabaja en el dominio o en los casos de uso no deberia necesitarlo.
  *

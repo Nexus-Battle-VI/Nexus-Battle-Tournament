@@ -16,16 +16,18 @@ Este repositorio contiene código y Pull Requests. No contiene Issues ni Product
 
 ## Estado
 
-**Andamiaje.** Arranca, verifica identidad, firma y comprueba el contrato interno, expone sus sondas y conecta con su base.
+El incremento local integra **HU-77/84/78** con la lectura publicada de **HU-83**: registro y consentimiento separado, confirmación gratuita/en créditos/pago simulado, calendario UTC y publicación inmutable de ocho equipos humanos. La publicación guarda las catorce justas en la misma transacción y conserva la API de HU-83 (`GET .../matches` devuelve array; el detalle conserva `teams` e `IN_PROGRESS`).
 
-**No tiene todavía ninguna ruta de negocio ni ninguna tabla**: las añade cada Historia de Usuario. Mientras tanto, cualquier ruta bajo ese prefijo responde `404` desde NestJS.
+La fuente de justas lee el bracket persistido. Combat se consulta por HTTP solamente para salas ya vinculadas; los fixtures se seleccionan explícitamente en pruebas. Crear/iniciar salas, avanzar resultados, premios y emisión requieren incrementos posteriores. La aceptación funcional y las sesiones reales siguen pendientes de QA.
+
+API y migraciones para consumidores: [docs/torneos-v2.md](docs/torneos-v2.md).
 
 ## Qué posee este contexto
 
 - Torneos y su calendario (uno cada 91 días).
 - Equipos inscritos de dos jugadores, con nombre y avatar.
 - Inscripciones y pagos de cupo, con su `operationId`.
-- Bracket de 8 cupos, con relleno por equipos de IA.
+- Bracket de ocho equipos humanos confirmados y dieciséis jugadores distintos, sin relleno por IA (HU-78 vigente).
 - Justas vinculadas a una sala de Combat y su resultado confirmado.
 - Entrega de premios al campeón, reanudable.
 
@@ -63,7 +65,7 @@ npm run lint
 npm run format:check
 npm run typecheck
 npm run test:coverage
-npm run test:db        # requiere Docker: levanta PostgreSQL con Testcontainers
+npm run test:db        # PostgreSQL 17 con Testcontainers, o TEST_DATABASE_URL aislada
 npm run build
 ```
 

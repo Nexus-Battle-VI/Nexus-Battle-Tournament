@@ -4,15 +4,45 @@ import type { Kysely } from 'kysely'
 
 import { HealthController } from '../../adapters/inbound/http/health.controller'
 import { READINESS_CHECKS, VERSION_REPORT } from '../../adapters/inbound/http/tokens.health'
+import { TournamentMatchesController } from '../../adapters/inbound/http/tournament-matches.controller'
+import {
+  GET_TOURNAMENT_MATCH_DETAIL,
+  LIST_TOURNAMENT_MATCHES,
+} from '../../adapters/inbound/http/tokens.tournament-matches'
 import { AnonymousIdentityGuard } from '../../adapters/inbound/http/auth/anonymous.guard'
 import { InternalServiceGuard } from '../../adapters/inbound/http/auth/internal-service.guard'
 import { JwtAuthGuard } from '../../adapters/inbound/http/auth/jwt-auth.guard'
 import { RolesGuard } from '../../adapters/inbound/http/auth/roles.guard'
 import { CognitoTokenVerifier } from '../../adapters/outbound/identity/CognitoTokenVerifier'
 import type { Database } from '../../adapters/outbound/persistence/schema'
+import { InMemoryTournamentEncounterRepository } from '../../adapters/outbound/persistence/InMemoryTournamentEncounterRepository'
+import { PostgresTournamentEncounterRepository } from '../../adapters/outbound/persistence/PostgresTournamentEncounterRepository'
+import { PersistedBracketEncounterSource } from '../../adapters/outbound/bracket/PersistedBracketEncounterSource'
+import { HttpCombatRecordAdapter } from '../../adapters/outbound/combat/HttpCombatRecordAdapter'
+import { RegistrationsController } from '../../adapters/inbound/http/registrations.controller'
+import { BracketsController } from '../../adapters/inbound/http/brackets.controller'
+import { Registrations, REGISTRATIONS } from '../../application/use-cases/Registrations'
+import { Brackets, BRACKETS } from '../../application/use-cases/Brackets'
+import { RegistrationServices } from '../../adapters/outbound/http/RegistrationServices'
+import { SimulatedEntryGateway } from '../../adapters/outbound/payment/SimulatedEntryGateway'
+import { InMemoryRegistrationRepository } from '../../adapters/outbound/persistence/InMemoryRegistrationRepository'
+import { PostgresRegistrationRepository } from '../../adapters/outbound/persistence/PostgresRegistrationRepository'
+import { RegistrationReconciler } from '../scheduling/registration-reconciler'
+import { CombatRecordReconciler } from '../scheduling/combat-record-reconciler'
 import { SystemClock } from '../../adapters/outbound/system/SystemClock'
 import { CLOCK, type ClockPort } from '../../application/ports/ClockPort'
 import { TOKEN_VERIFIER, type TokenVerifierPort } from '../../application/ports/TokenVerifierPort'
+import {
+  TOURNAMENT_ENCOUNTER_REPOSITORY,
+  type TournamentEncounterRepositoryPort,
+} from '../../application/ports/TournamentEncounterRepositoryPort'
+import {
+  TOURNAMENT_ENCOUNTER_SOURCE,
+  type TournamentEncounterSourcePort,
+} from '../../application/ports/TournamentEncounterSourcePort'
+import { COMBAT_RECORD, type CombatRecordPort } from '../../application/ports/CombatRecordPort'
+import { GetTournamentMatchDetail } from '../../application/use-cases/GetTournamentMatchDetail'
+import { ListTournamentMatches } from '../../application/use-cases/ListTournamentMatches'
 import { AuthMode, loadConfig, PersistenceDriver, type AppConfig } from '../config/env'
 import type { ReadinessCheck, VersionReport } from '../health/health'
 import { describeError } from '../observability/describe-error'
@@ -42,8 +72,54 @@ export const INTERNAL_CALLERS: readonly string[] = []
  * independiente del framework.
  */
 @Module({
-  controllers: [HealthController],
+  controllers: [
+    HealthController,
+    TournamentMatchesController,
+    RegistrationsController,
+    BracketsController,
+  ],
   providers: [
+    {
+      provide: REGISTRATIONS,
+      useFactory: (
+        db: Kysely<Database> | null,
+        config: AppConfig,
+        clock: ClockPort,
+        encounters: TournamentEncounterRepositoryPort,
+      ) => {
+        const services = new RegistrationServices(
+          process.env.ACCOUNT_BASE_URL,
+          process.env.WALLET_BASE_URL,
+          config.internalServiceAuthSecret,
+        )
+        return new Registrations(
+          db === null
+            ? new InMemoryRegistrationRepository(encounters)
+            : new PostgresRegistrationRepository(db),
+          services,
+          services,
+          clock,
+          new SimulatedEntryGateway(),
+        )
+      },
+      inject: [DATABASE, APP_CONFIG, CLOCK, TOURNAMENT_ENCOUNTER_REPOSITORY],
+    },
+    {
+      provide: BRACKETS,
+      useFactory: (r: Registrations, clock: ClockPort) => new Brackets(r.repository, clock),
+      inject: [REGISTRATIONS, CLOCK],
+    },
+    {
+      provide: RegistrationReconciler,
+      useFactory: (r: Registrations) => new RegistrationReconciler(r),
+      inject: [REGISTRATIONS],
+    },
+    {
+      provide: CombatRecordReconciler,
+      useFactory: (repository: TournamentEncounterRepositoryPort, combat: CombatRecordPort) =>
+        new CombatRecordReconciler(repository, combat),
+      inject: [TOURNAMENT_ENCOUNTER_REPOSITORY, COMBAT_RECORD],
+    },
     {
       provide: APP_CONFIG,
       useFactory: (): AppConfig => loadConfig(process.env),
@@ -173,6 +249,49 @@ export const INTERNAL_CALLERS: readonly string[] = []
         nodeEnv: config.nodeEnv,
       }),
       inject: [APP_CONFIG],
+    },
+    // --- HU-83 (Management#465): registro y consulta de justas -------------
+    //
+    // Fuente persistida HU-78 y lectura HTTP de salas de Combat previamente
+    // vinculadas. Los fixtures históricos solo se seleccionan en pruebas;
+    // crear o iniciar salas sigue perteneciendo al incremento HU-85.
+    {
+      provide: TOURNAMENT_ENCOUNTER_REPOSITORY,
+      useFactory: (db: Kysely<Database> | null): TournamentEncounterRepositoryPort =>
+        db === null
+          ? new InMemoryTournamentEncounterRepository()
+          : new PostgresTournamentEncounterRepository(db),
+      inject: [DATABASE],
+    },
+    {
+      provide: TOURNAMENT_ENCOUNTER_SOURCE,
+      useFactory: (r: Registrations): TournamentEncounterSourcePort =>
+        new PersistedBracketEncounterSource(r.repository),
+      inject: [REGISTRATIONS],
+    },
+    {
+      provide: COMBAT_RECORD,
+      useFactory: (config: AppConfig): CombatRecordPort =>
+        new HttpCombatRecordAdapter(process.env.COMBAT_BASE_URL, config.internalServiceAuthSecret),
+      inject: [APP_CONFIG],
+    },
+    {
+      provide: LIST_TOURNAMENT_MATCHES,
+      useFactory: (
+        repository: TournamentEncounterRepositoryPort,
+        source: TournamentEncounterSourcePort,
+        combat: CombatRecordPort,
+      ): ListTournamentMatches => new ListTournamentMatches(repository, source, combat),
+      inject: [TOURNAMENT_ENCOUNTER_REPOSITORY, TOURNAMENT_ENCOUNTER_SOURCE, COMBAT_RECORD],
+    },
+    {
+      provide: GET_TOURNAMENT_MATCH_DETAIL,
+      useFactory: (
+        repository: TournamentEncounterRepositoryPort,
+        source: TournamentEncounterSourcePort,
+        combat: CombatRecordPort,
+      ): GetTournamentMatchDetail => new GetTournamentMatchDetail(repository, source, combat),
+      inject: [TOURNAMENT_ENCOUNTER_REPOSITORY, TOURNAMENT_ENCOUNTER_SOURCE, COMBAT_RECORD],
     },
   ],
 })
