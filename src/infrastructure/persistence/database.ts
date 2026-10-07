@@ -17,6 +17,9 @@ import { migration as adminActions } from '../../adapters/outbound/persistence/m
 import { migration as modeMembers } from '../../adapters/outbound/persistence/migrations/006-tournament-mode-members-progression'
 import { migration as acceptance } from '../../adapters/outbound/persistence/migrations/007-tournament-round-acceptance-resolution'
 
+import * as externalLinks from '../../adapters/outbound/persistence/migrations/008-tournament-external-links'
+import * as broadcast from '../../adapters/outbound/persistence/migrations/009-tournament-broadcast'
+
 export interface DatabaseOptions {
   readonly connectionString: string
   /**
@@ -81,6 +84,8 @@ export const MIGRATIONS: Readonly<Record<string, Migration>> = {
   '004-tournament-admin-actions': adminActions,
   '006-tournament-mode-members-progression': modeMembers,
   '007-tournament-round-acceptance-resolution': acceptance,
+  '008-tournament-external-links': externalLinks,
+  '009-tournament-broadcast': broadcast,
 }
 
 export interface MigrationOutcome {

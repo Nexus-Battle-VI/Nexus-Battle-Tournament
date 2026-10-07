@@ -10,12 +10,6 @@ export class TournamentPrizeClient implements TournamentPrizeDestination {
   ) {}
   async grant(command: PrizeGrant): Promise<unknown> {
     requireRule(
-      command.finalRoomId !== null,
-      'PRIZE_RESOLUTION_CONTRACT_REQUIRED',
-      'El contrato de premios vigente requiere una sala final.',
-      503,
-    )
-    requireRule(
       command.heroId !== null,
       'PRIZE_RECIPIENT_REQUIRED',
       'Falta un héroe receptor validado.',

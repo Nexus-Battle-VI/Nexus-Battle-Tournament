@@ -136,7 +136,7 @@ La final por ausencia declara campeón desde seeds y genera derechos una sola ve
 
 ## Wire reconciliado
 
-Se implementa revisión documental 3 de torneos-v3.0.0 (Infrastructure 4d4f677).
+Se implementa revisión documental 5 de torneos-v3.0.0, conservando formas publicadas.
 El adaptador traduce tournamentMode a mode y envía teamSize, con HMAC caller tournament.
 El cuerpo DUO histórico permanece intacto. El lector usa la configuración v3 de Combat
 para exigir 1/2/3 participantes por lado; también valida los miembros contra HU-83.
@@ -155,3 +155,9 @@ Combat real para las tres modalidades; TRIO tiene seis participantes y E1/E2 con
 Account/Inventory y el verificador JWT son dobles explícitos; Combat usa memoria en
 este recorrido. La persistencia Mongo de Combat corresponde a la evidencia de C.
 No se afirman cuentas reales, entregas reales de premio, aceptación del PO ni despliegue.
+
+## Emisión, enlaces y premios por ausencia
+
+AppModule compone Broadcasts y ExternalLinks con PostgreSQL o memoria según el driver. Las migraciones forward 008 external-links y 009 broadcast se registran después de 007 sin alterar el historial anterior. La observación valida y conserva 2/4/6 combatientes para SOLO/DUO/TRIO. El operador designado usa revisión para seleccionar E1/E2; una lectura tardía no sustituye la selección actual.
+
+Una final por ausencia envía los mismos diez campos de premio con finalRoomId:null. Tournament conserva finalResolutionId en su derecho durable, sin añadirlo al comando firmado. Si no hay héroe en el registro de Combat, consulta Inventory con caller tournament, exige playerId coincidente y fija el heroId antes de enviar. Un destinatario sin selección o una dependencia caída mantienen PENDING y el mismo operationId. Wallet/Inventory deben integrar y migrar sus PR de HU-86 antes de activar este flujo.

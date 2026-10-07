@@ -1,4 +1,5 @@
 import type { ColumnType, Generated } from 'kysely'
+import type { BroadcastState } from '../../../domain/broadcast'
 import type {
   EntryPolicy,
   RegistrationTeam,
@@ -100,6 +101,15 @@ export interface TournamentCombatEventTable {
 }
 
 export interface Database {
+  tournament_broadcasts: { tournament_id: string; data: ColumnType<BroadcastState, string, string> }
+  tournament_external_links: {
+    tournament_id: string
+    live_url: string | null
+    youtube_archive_url: string | null
+    revision: ColumnType<string, number, number>
+    updated_at: Date
+  }
+
   tournament_match_acceptance: {
     tournament_id: string
     encounter_id: string

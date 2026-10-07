@@ -44,7 +44,7 @@ export const validatePrizeConfiguration = (
   const fail = (): never => {
     throw new RegistrationError(
       'INVALID_PRIZE_CONFIGURATION',
-      'Define dos integrantes, créditos enteros positivos y al menos una épica explícita.',
+      `Define ${String(teamSize)} integrante(s), créditos enteros positivos y al menos una épica explícita.`,
       400,
     )
   }
@@ -145,12 +145,6 @@ export const grantCommand = (line: PrizeLine): PrizeGrant => {
     'PRIZE_RECIPIENT_REQUIRED',
     'Falta un héroe receptor autoritativo; el derecho sigue pendiente.',
     409,
-  )
-  requireRule(
-    line.finalRoomId !== null,
-    'PRIZE_RESOLUTION_CONTRACT_REQUIRED',
-    'Wallet/Inventory requieren ampliar su contrato para una final sin sala.',
-    503,
   )
   return {
     operationId: line.operationId,

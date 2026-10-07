@@ -3,6 +3,7 @@ import type { PublishedBracket, MatchId } from '../../src/domain/bracket'
 import { projectBracket, type ConfirmedMatchResult } from '../../src/domain/progression'
 import type { TournamentMatchReadPort } from '../../src/application/ports/TournamentMatchReadPort'
 import type { TournamentEncounter } from '../../src/domain/entities/TournamentEncounter'
+import type { TournamentMode } from '../../src/domain/registration'
 import type { RegistrationRepository } from '../../src/application/ports/RegistrationPorts'
 import { fixture, FREE_POLICY } from './registration-fixture'
 
@@ -51,10 +52,32 @@ export const storedFixture = (e: MatchRead, bracket: PublishedBracket): Tourname
     syncedAt: '2026-10-12T12:10:00.000Z',
   },
 })
-export const publishedFixture = async (repository?: RegistrationRepository) => {
+export const publishedFixture = async (
+  repository?: RegistrationRepository,
+  mode?: TournamentMode,
+) => {
   const f = fixture(repository, FREE_POLICY),
-    t = await f.create()
-  for (let n = 0; n < 8; n++) await f.confirm(t.id, n)
+    t = await f.create(mode)
+  for (let n = 0; n < 8; n++) {
+    if (mode === undefined) {
+      await f.confirm(t.id, n)
+      continue
+    }
+    const memberIds = Array.from(
+      { length: t.teamSize },
+      (_, i) => 'mode-' + String(n) + '-' + String(i),
+    )
+    const owner = memberIds[0]!
+    const team = await f.registrations.register(t.id, owner, {
+      operationId: 'register-' + String(n),
+      name: 'Equipo ' + String(n),
+      invitedMemberIds: memberIds.slice(1),
+      avatar: { kind: 'ACCOUNT_AVATAR', subject: owner },
+    })
+    for (const member of memberIds.slice(1))
+      await f.registrations.consent(t.id, team.id, member, 'consent-' + member, true)
+    await f.registrations.enter(t.id, team.id, owner, { operationId: 'pay-' + String(n) })
+  }
   f.setNow('2026-10-10T00:00:00Z')
   await f.brackets.publish(t.id, 'admin', 'publish')
   return { ...f, tournament: await f.repo.read(t.id), id: t.id }

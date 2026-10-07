@@ -56,6 +56,20 @@ describe('Contrato saliente HU-86: HMAC y fallo cerrado', () => {
       expect(fetcher.mock.calls[1]![1]!.body).toBe(options!.body)
     },
   )
+  it('firma los diez campos también para una final sin sala', async () => {
+    const c = { ...command, finalRoomId: null }
+    fetcher.mockResolvedValue(
+      new Response(JSON.stringify({ ...c, status: 'DELIVERED', receiptId: 'receipt' })),
+    )
+    const receipt = await new TournamentPrizeClient(
+      'http://wallet',
+      'http://inventory',
+      'secret',
+    ).grant(c)
+    expect(receipt).toEqual({ ...c, status: 'DELIVERED', receiptId: 'receipt' })
+    expect(JSON.parse(fetcher.mock.calls[0]![1]!.body as string)).toEqual(c)
+    expect(Object.keys(c)).toHaveLength(10)
+  })
   it('sin configuración/secreto, timeout, 404, 409 y 503 no produce éxito', async () => {
     await expect(
       new TournamentPrizeClient(undefined, undefined, null).grant(command),

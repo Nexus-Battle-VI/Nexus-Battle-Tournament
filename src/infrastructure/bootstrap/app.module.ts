@@ -2,6 +2,18 @@ import { Module, type CanActivate } from '@nestjs/common'
 import { APP_GUARD, Reflector } from '@nestjs/core'
 import type { Kysely } from 'kysely'
 
+import { BroadcastsController } from '../../adapters/inbound/http/broadcasts.controller'
+import { Broadcasts, BROADCASTS } from '../../application/use-cases/Broadcasts'
+import { InMemoryBroadcastRepository } from '../../adapters/outbound/persistence/InMemoryBroadcastRepository'
+import { PostgresBroadcastRepository } from '../../adapters/outbound/persistence/PostgresBroadcastRepository'
+import { ExternalLinksController } from '../../adapters/inbound/http/external-links.controller'
+import { ExternalLinks, EXTERNAL_LINKS } from '../../application/use-cases/ExternalLinks'
+import { InMemoryExternalLinksRepository } from '../../adapters/outbound/persistence/InMemoryExternalLinksRepository'
+import { PostgresExternalLinksRepository } from '../../adapters/outbound/persistence/PostgresExternalLinksRepository'
+import {
+  TOURNAMENT_MATCH_READ,
+  type TournamentMatchReadPort,
+} from '../../application/ports/TournamentMatchReadPort'
 import { HealthController } from '../../adapters/inbound/http/health.controller'
 import { READINESS_CHECKS, VERSION_REPORT } from '../../adapters/inbound/http/tokens.health'
 import { TournamentMatchesController } from '../../adapters/inbound/http/tournament-matches.controller'
@@ -98,7 +110,7 @@ import {
   PRIZE_RECIPIENTS,
   type TournamentPrizeRecipients,
 } from '../../application/ports/LifecyclePorts'
-import { UnavailableTournamentPrizeRecipients } from '../../adapters/outbound/system/UnavailableTournamentPrizeRecipients'
+import { TournamentPrizeRecipientsClient } from '../../adapters/outbound/http/TournamentPrizeRecipientsClient'
 
 export const APP_CONFIG = Symbol('AppConfig')
 export const LOGGER = Symbol('Logger')
@@ -124,6 +136,8 @@ export const INTERNAL_CALLERS: readonly string[] = []
  */
 @Module({
   controllers: [
+    BroadcastsController,
+    ExternalLinksController,
     HealthController,
     TournamentMatchesController,
     RegistrationsController,
@@ -134,8 +148,50 @@ export const INTERNAL_CALLERS: readonly string[] = []
   ],
   providers: [
     {
+      provide: TOURNAMENT_MATCH_READ,
+      useFactory: (
+        repository: TournamentEncounterRepositoryPort,
+        combat: CombatRecordPort,
+      ): TournamentMatchReadPort => new ArchivedTournamentMatchReadAdapter(repository, combat),
+      inject: [TOURNAMENT_ENCOUNTER_REPOSITORY, COMBAT_RECORD],
+    },
+    {
+      provide: BROADCASTS,
+      useFactory: (
+        db: Kysely<Database> | null,
+        r: Registrations,
+        m: TournamentMatchReadPort,
+        clock: ClockPort,
+      ) =>
+        new Broadcasts(
+          db === null ? new InMemoryBroadcastRepository() : new PostgresBroadcastRepository(db),
+          r.repository,
+          m,
+          clock,
+        ),
+      inject: [DATABASE, REGISTRATIONS, TOURNAMENT_MATCH_READ, CLOCK],
+    },
+    {
+      provide: EXTERNAL_LINKS,
+      useFactory: (db: Kysely<Database> | null, r: Registrations, clock: ClockPort) =>
+        new ExternalLinks(
+          db === null
+            ? new InMemoryExternalLinksRepository()
+            : new PostgresExternalLinksRepository(db),
+          r.repository,
+          clock,
+        ),
+      inject: [DATABASE, REGISTRATIONS, CLOCK],
+    },
+
+    {
       provide: PRIZE_RECIPIENTS,
-      useFactory: (): TournamentPrizeRecipients => new UnavailableTournamentPrizeRecipients(),
+      useFactory: (config: AppConfig): TournamentPrizeRecipients =>
+        new TournamentPrizeRecipientsClient(
+          process.env.INVENTORY_BASE_URL,
+          config.internalServiceAuthSecret,
+        ),
+      inject: [APP_CONFIG],
     },
     {
       provide: MATCH_ACCEPTANCE_STORE,

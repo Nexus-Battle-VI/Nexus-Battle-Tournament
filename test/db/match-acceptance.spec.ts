@@ -13,6 +13,7 @@ import { AcceptanceReconciliation } from '../../src/application/use-cases/Accept
 import { Progressions } from '../../src/application/use-cases/Progressions'
 import { EncounterAdministration } from '../../src/application/use-cases/EncounterAdministration'
 import { PersistedBracketEncounterSource } from '../../src/adapters/outbound/bracket/PersistedBracketEncounterSource'
+import type { PrizeGrant } from '../../src/domain/prize'
 import { Prizes } from '../../src/application/use-cases/Prizes'
 import type { Database } from '../../src/adapters/outbound/persistence/schema'
 
@@ -279,7 +280,13 @@ describe('Aceptación, ausencias y worker con PostgreSQL real y dos pools', () =
     })
     expect(state.champion!.memberIds).toHaveLength(3)
     expect(state.results).toHaveLength(14)
-    const grant = jest.fn(),
+    const grant = jest.fn((command: PrizeGrant) =>
+        Promise.resolve({
+          ...command,
+          status: 'DELIVERED',
+          receiptId: 'receipt-' + command.operationId,
+        }),
+      ),
       heroFor = jest.fn(() => Promise.resolve(null as string | null))
     const prizes = new Prizes(f.lifecycle, f.repo, { grant }, f.clock, { heroFor })
     await prizes.approve(f.id, 'admin', {
@@ -299,10 +306,11 @@ describe('Aceptación, ausencias y worker con PostgreSQL real y dos pools', () =
     expect(recovered.lines.map((l) => l.operationId)).toEqual(
       pending.lines.map((l) => l.operationId),
     )
-    expect(recovered.lines.every((l) => l.lastError === 'PRIZE_RESOLUTION_CONTRACT_REQUIRED')).toBe(
-      true,
-    )
-    expect(grant).not.toHaveBeenCalled()
+    expect(recovered.status).toBe('COMPLETED')
+    expect(recovered.lines.every((l) => l.lastError === null && l.finalRoomId === null)).toBe(true)
+    expect(grant).toHaveBeenCalledTimes(4)
+    await prizes.reconcile()
+    expect(grant).toHaveBeenCalledTimes(4)
     await reborn(f).worker.sweep()
     expect((await f.lifecycle.read(f.id)).results).toHaveLength(14)
     expect((await f.progress.view(f.id)).statistics.reduce((n, s) => n + s.victories, 0)).toBe(14)

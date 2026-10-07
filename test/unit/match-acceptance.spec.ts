@@ -1,6 +1,7 @@
 import { acceptanceFixture } from '../support/acceptance-fixture'
 import { matchFixture } from '../support/match-read-fixture'
 import { CombatRejectedError } from '../../src/domain/encounter-admin'
+import type { PrizeGrant } from '../../src/domain/prize'
 import { Prizes } from '../../src/application/use-cases/Prizes'
 import { roundWindows } from '../../src/domain/match-acceptance'
 import { UnavailableTournamentPrizeRecipients } from '../../src/adapters/outbound/system/UnavailableTournamentPrizeRecipients'
@@ -399,7 +400,13 @@ describe('HU-85 v3: reloj, aceptación individual, decisión durable y avance po
       state.results.find((r) => r.matchId === 'E11')!.winnerTeamId,
       state.results.find((r) => r.matchId === 'E13')!.winnerTeamId,
     ])
-    const grant = jest.fn(),
+    const grant = jest.fn((command: PrizeGrant) =>
+        Promise.resolve({
+          ...command,
+          status: 'DELIVERED',
+          receiptId: 'receipt-' + command.operationId,
+        }),
+      ),
       heroFor = jest.fn(() => Promise.resolve(null as string | null))
     const prizes = new Prizes(f.lifecycle, f.repo, { grant }, f.clock, { heroFor })
     await prizes.approve(f.id, 'admin', {
@@ -430,12 +437,16 @@ describe('HU-85 v3: reloj, aceptación individual, decisión durable y avance po
     )
     heroFor.mockImplementation(() => Promise.resolve('authoritative-hero'))
     await prizes.reconcile()
+    const delivered = (await prizes.view(f.id)).delivery!
+    expect(delivered.status).toBe('COMPLETED')
     expect(
-      (await prizes.view(f.id)).delivery!.lines.every(
-        (l) => l.lastError === 'PRIZE_RESOLUTION_CONTRACT_REQUIRED',
+      delivered.lines.every(
+        (l) => l.finalRoomId === null && l.heroId === 'authoritative-hero' && l.lastError === null,
       ),
     ).toBe(true)
-    expect(grant).not.toHaveBeenCalled()
+    expect(grant).toHaveBeenCalledTimes(4)
+    await prizes.reconcile()
+    expect(grant).toHaveBeenCalledTimes(4)
     await f.reconciliation.sweep()
     expect((await f.lifecycle.read(f.id)).results).toHaveLength(14)
     expect((await f.progress.view(f.id)).statistics.reduce((n, s) => n + s.victories, 0)).toBe(14)

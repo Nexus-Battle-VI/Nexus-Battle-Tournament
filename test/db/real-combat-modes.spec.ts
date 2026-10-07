@@ -155,6 +155,27 @@ suite('Modalidades v3 con Tournament HTTP + PostgreSQL + Combat real', () => {
             resolution: null,
           })
         }
+        const designated = await request(app.getHttpServer())
+          .post('/api/v1/tournaments/admin/' + f.id + '/broadcast/designate')
+          .set('Authorization', 'Bearer admin')
+          .send({})
+        expect(designated.status).toBe(200)
+        let revision = 1
+        for (const m of first) {
+          const selected = await request(app.getHttpServer())
+            .post('/api/v1/tournaments/' + f.id + '/broadcast/selection')
+            .set('Authorization', 'Bearer admin')
+            .send({ matchId: m.encounterId, expectedRevision: revision })
+          expect(selected.status).toBe(200)
+          const view = selected.body as {
+            state: { revision: number }
+            snapshot: { combatants: unknown[]; encounterId: string }
+          }
+          revision = view.state.revision
+          expect(view.snapshot.encounterId).toBe(m.encounterId)
+          expect(view.snapshot.combatants).toHaveLength(f.t.teamSize * 2)
+          expect(JSON.stringify(view.snapshot)).not.toMatch(/internalSeed|commandId|token/u)
+        }
         expect(new Set(rooms).size).toBe(2)
         expect(
           (
