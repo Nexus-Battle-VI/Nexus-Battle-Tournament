@@ -2,6 +2,8 @@
 
 Fuente: [HU-85.4 #488](https://github.com/Nexus-Battle-VI/Nexus-Battle-Management/issues/488). Contrato verificado: `hu-85-tournament-encounter-administration-v1` (Infraestructura, **propuesta pendiente de revisión por los responsables**: nada de lo que sigue la presenta como aprobada).
 
+Estado de las tareas de HU-85 al redactar este informe: contrato HU-85.1 (Infrastructure #200) y backend HU-85.2 (Tournament #9) fusionados; Web HU-85.3 en revisión (Web #219). Combat se verificó con su `develop` del 2026-10-07 (incluye EN-036.2 y EN-036.3, que no tocan las rutas de torneo).
+
 ## Qué es real y qué es de prueba
 
 | Capa                                                  | Pruebas locales (`jest`, `test/integration` y `test/db`)                           | Contra Combat real (`real-combat-hu85.spec.ts`)              |
@@ -70,4 +72,4 @@ Siguen sin regla aprobada y esta entrega **no** las implementa: reprogramación,
 
 ## Qué no se verificó
 
-Cognito real y roles reales; Account e Inventory reales (Combat los consume como dobles); Wallet y premios; transmisión; despliegue real (la rama de Infrastructure agrega `COMBAT_BASE_URL` al servicio `tournament` en compose; no se desplegó); Combat con persistencia real; el avance del bracket (HU-80).
+Cognito real y roles reales; Account e Inventory reales (Combat los consume como dobles); Wallet y premios; transmisión; despliegue real (el compose de Infrastructure en `develop` ya declara `COMBAT_BASE_URL`, `ACCOUNT_BASE_URL` y `WALLET_BASE_URL` para `tournament`; no se desplegó); Combat con persistencia real; el avance del bracket (HU-80).
