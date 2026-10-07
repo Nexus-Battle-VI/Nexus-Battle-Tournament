@@ -80,7 +80,8 @@ export class PostgresEncounterAdminStore implements EncounterAdminStore {
       .selectAll()
       .where('tournament_id', '=', tournamentId)
       .orderBy('occurred_at', 'asc')
-      .orderBy('action_id', 'asc')
+      .orderBy('encounter_id', 'asc')
+      .orderBy('action', 'asc')
       .execute()
     return rows.map(toRecord)
   }
