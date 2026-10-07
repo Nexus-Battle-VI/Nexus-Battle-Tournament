@@ -19,6 +19,8 @@ export interface BroadcastCombatant {
   heroId: string
   displayName: string | null
   position: number
+  seat: number
+  heroSubtype: string | null
   health: { current: number; max: number } | null
   power: { current: number; max: number } | null
 }
@@ -29,6 +31,7 @@ export interface BroadcastSnapshot {
   encounterId: string
   bracketLabel: string
   combatRoomId: string
+  startedAt: string
   track: MatchRead['track']
   round: number
   status: 'IN_PROGRESS' | 'FINISHED'
@@ -58,11 +61,13 @@ function valid(condition: boolean): asserts condition {
   )
 }
 const counter = (x: unknown): x is number => Number.isSafeInteger(x) && Number(x) >= 0
-const meter = (raw: unknown): BroadcastCombatant['health'] => {
+const meter = (raw: unknown, allowZeroMax = false): BroadcastCombatant['health'] => {
   if (raw === null || raw === undefined) return null
   valid(object(raw))
   const r = raw
-  valid(counter(r.current) && counter(r.max) && r.max > 0 && r.current <= r.max)
+  valid(
+    counter(r.current) && counter(r.max) && r.max >= (allowZeroMax ? 0 : 1) && r.current <= r.max,
+  )
   return { current: r.current, max: r.max }
 }
 const publicResult = (result: MatchRead['result']): BroadcastSnapshot['result'] => {
@@ -118,6 +123,8 @@ export const broadcastSnapshot = (
   valid(
     battle.battleId === e.combatRoomId &&
       battle.startedAt === e.startedAt &&
+      typeof battle.startedAt === 'string' &&
+      !Number.isNaN(Date.parse(battle.startedAt)) &&
       counter(battle.turnsCompleted) &&
       counter(battle.round) &&
       battle.round > 0,
@@ -157,14 +164,21 @@ export const broadcastSnapshot = (
       (x) => object(x) && x.teamLabel === entry.teamLabel && x.seat === entry.seat,
     )
     valid(object(c) && (entry.displayName === null || typeof entry.displayName === 'string'))
+    valid(
+      entry.heroSubtype === undefined ||
+        entry.heroSubtype === null ||
+        typeof entry.heroSubtype === 'string',
+    )
     return {
       teamLabel: entry.teamLabel,
       playerId: entry.playerId,
       heroId: entry.heroId,
       displayName: entry.displayName,
       position,
+      seat: entry.seat,
+      heroSubtype: typeof entry.heroSubtype === 'string' ? entry.heroSubtype : null,
       health: meter(c.health),
-      power: meter(c.power),
+      power: meter(c.power, true),
     }
   })
   const current = battle.currentTurn
@@ -185,6 +199,7 @@ export const broadcastSnapshot = (
     encounterId: e.encounterId,
     bracketLabel: e.bracketLabel,
     combatRoomId: roomId,
+    startedAt: battle.startedAt,
     track: e.track,
     round: e.round,
     status: e.status,

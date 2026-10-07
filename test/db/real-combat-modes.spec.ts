@@ -169,11 +169,29 @@ suite('Modalidades v3 con Tournament HTTP + PostgreSQL + Combat real', () => {
           expect(selected.status).toBe(200)
           const view = selected.body as {
             state: { revision: number }
-            snapshot: { combatants: unknown[]; encounterId: string }
+            snapshot: {
+              combatants: { teamLabel: string; seat: number; heroSubtype: string | null }[]
+              encounterId: string
+              combatRoomId: string
+              startedAt: string
+            }
           }
           revision = view.state.revision
           expect(view.snapshot.encounterId).toBe(m.encounterId)
           expect(view.snapshot.combatants).toHaveLength(f.t.teamSize * 2)
+          const observedRoom = await reader.readRecord(view.snapshot.combatRoomId, 0)
+          expect(view.snapshot.startedAt).toBe(observedRoom.startedAt!.toISOString())
+          expect(view.snapshot.combatants.every((c) => c.heroSubtype === 'GUERRERO_ARMAS')).toBe(
+            true,
+          )
+          for (const teamLabel of observedRoom.teams!.map((team) => team.teamLabel)) {
+            expect(
+              view.snapshot.combatants
+                .filter((c) => c.teamLabel === teamLabel)
+                .map((c) => c.seat)
+                .sort((a, b) => a - b),
+            ).toEqual(Array.from({ length: f.t.teamSize }, (_, seat) => seat))
+          }
           expect(JSON.stringify(view.snapshot)).not.toMatch(/internalSeed|commandId|token/u)
         }
         expect(new Set(rooms).size).toBe(2)

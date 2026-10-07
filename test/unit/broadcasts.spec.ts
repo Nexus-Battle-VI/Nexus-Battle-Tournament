@@ -5,7 +5,7 @@ import { broadcastSnapshot } from '../../src/domain/broadcast'
 interface FixtureWire {
   battle: {
     battleId: string
-    turnOrder: { playerId: string }[]
+    turnOrder: { playerId: string; seat: number; heroSubtype?: unknown }[]
     currentTurn: { position: number }
     combatants: { health: { current: number; max: number } | null; power?: unknown }[]
   }
@@ -17,10 +17,18 @@ describe('HU-79/81: consumo observable controlado, sin acciones HU-85', () => {
     async (mode) => {
       const f = await publishedFixture(undefined, mode)
       const e = matchFixture(f.tournament.bracket!, 'E1', [], null, false, 1)
+      const wire = e.events[0]!.payload as FixtureWire
+      wire.battle.turnOrder[0]!.heroSubtype = 'MEDICO'
       const snapshot = broadcastSnapshot(e, f.tournament, f.clock.now().toISOString())
       expect(snapshot.combatants).toHaveLength(f.tournament.teamSize! * 2)
       expect(snapshot.combatants.map((c) => c.playerId)).toEqual(
         e.teams.flatMap((t) => t.participants.map((p) => p.playerId)),
+      )
+      expect(snapshot.startedAt).toBe(e.startedAt)
+      expect(snapshot.combatants[0]!.heroSubtype).toBe('MEDICO')
+      expect(snapshot.combatants[1]!.heroSubtype).toBeNull()
+      expect(snapshot.combatants.map((c) => c.seat)).toEqual(
+        wire.battle.turnOrder.map((c) => c.seat),
       )
       const truncated = {
         ...e,
@@ -152,7 +160,7 @@ describe('HU-79/81: consumo observable controlado, sin acciones HU-85', () => {
     })
     expect((await f.service.configuration(f.id)).selectedMatchId).toBe(f.e1.encounterId)
   })
-  it.each(['battle', 'room', 'order', 'turn', 'meters', 'roster', 'cursor'])(
+  it.each(['battle', 'room', 'order', 'turn', 'meters', 'roster', 'cursor', 'subtype', 'inicio'])(
     'estado visible inválido %s produce 503',
     async (kind) => {
       const f = await broadcastFixture(),
@@ -166,9 +174,19 @@ describe('HU-79/81: consumo observable controlado, sin acciones HU-85', () => {
       if (kind === 'meters') battle.combatants[0]!.health!.current = 999
       if (kind === 'roster') e.teams = [e.teams[0]!]
       if (kind === 'cursor') e.engineLastSeq = 2
+      if (kind === 'subtype') battle.turnOrder[0]!.heroSubtype = { secret: 'must-not-be-exposed' }
+      if (kind === 'inicio') e.startedAt = null
       expect(() => broadcastSnapshot(e, f.tournament, f.clock.now().toISOString())).toThrow()
     },
   )
+  it('conserva Poder 0/0 legítimo sin rechazar al héroe que no tiene reserva', async () => {
+    const f = await broadcastFixture()
+    const wire = f.e1.events[0]!.payload as FixtureWire
+    wire.battle.combatants[0]!.power = { current: 0, max: 0 }
+    expect(
+      broadcastSnapshot(f.e1, f.tournament, f.clock.now().toISOString()).combatants[0]!.power,
+    ).toEqual({ current: 0, max: 0 })
+  })
   it('medidores legítimamente ausentes son null y sin selección no inventa captura', async () => {
     const f = await broadcastFixture()
     await f.service.designate(f.id, 'A')
