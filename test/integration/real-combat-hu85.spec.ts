@@ -134,6 +134,81 @@ suite('HU-85.4 contra Combat real (Account e Inventory son dobles de prueba)', (
     expect(record).toMatchObject({ roomId: prepared.battleId, status: 'IN_BATTLE' })
   }, 60000)
 
+  it('C10 real: Combat inalcanzable da 503 sin cambiar nada y el reintento llega a una sola sala', async () => {
+    const down = new EncounterAdministration(
+      f.encounters,
+      new PersistedBracketEncounterSource(f.repo),
+      new HttpCombatRecordAdapter('http://127.0.0.1:1', SECRET),
+      new HttpCombatRoomCommandAdapter('http://127.0.0.1:1', SECRET),
+      store,
+      f.clock,
+      (id) => f.brackets.view(id),
+    )
+    await expect(down.prepare(tid, `${tid}:E1`, 'admin', 'prep-e1')).rejects.toMatchObject({
+      code: 'SERVICE_UNAVAILABLE',
+      status: 503,
+    })
+    expect(await f.encounters.findOne(tid, `${tid}:E1`)).toMatchObject({ combatRoomId: null })
+    expect(await store.list(tid)).toEqual([])
+    const retry = await admin().prepare(tid, `${tid}:E1`, 'admin', 'prep-e1')
+    expect((await admin().prepare(tid, `${tid}:E1`, 'admin', 'prep-e1')).battleId).toBe(
+      retry.battleId,
+    )
+    expect(await store.list(tid)).toHaveLength(1)
+  }, 60000)
+
+  it('C11/C12 real: operationId en conflicto, iniciar sin preparar y sala ajena en Combat', async () => {
+    await admin().prepare(tid, `${tid}:E1`, 'admin', 'misma')
+    await expect(admin().prepare(tid, `${tid}:E2`, 'admin', 'misma')).rejects.toMatchObject({
+      code: 'OPERATION_CONFLICT',
+      status: 409,
+    })
+    await expect(admin().start(tid, `${tid}:E3`, 'admin', 'start-e3')).rejects.toMatchObject({
+      code: 'ENCOUNTER_NOT_PREPARED',
+      status: 409,
+    })
+    const commands = new HttpCombatRoomCommandAdapter(base, SECRET)
+    // Combat real: el mismo operationId con otro cuerpo es 409, y una sala inexistente también.
+    await expect(
+      commands.createRoom({
+        operationId: `tournament:${tid}:E1:prepare`,
+        tournamentId: tid,
+        encounterId: `${tid}:E1`,
+        teams: [
+          { teamId: 'otro-a', memberIds: ['p0', 'q0'] },
+          { teamId: 'otro-b', memberIds: ['p1', 'q1'] },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'COMBAT_ROOM_CONFLICT', status: 409 })
+    await expect(
+      commands.startRoom('11111111-1111-4111-8111-111111111111', {
+        operationId: 'x',
+        tournamentId: tid,
+        encounterId: `${tid}:E1`,
+      }),
+    ).rejects.toMatchObject({ code: 'COMBAT_ROOM_CONFLICT', status: 409 })
+    expect(await store.list(tid)).toHaveLength(1)
+  }, 60000)
+
+  it('CA-04 real: dos instancias del servicio compiten por la misma justa y Combat da una sola sala', async () => {
+    const [a, b] = await Promise.all([
+      admin().prepare(tid, `${tid}:E1`, 'admin', 'prep-a'),
+      admin().prepare(tid, `${tid}:E1`, 'admin2', 'prep-b'),
+    ])
+    expect(a.battleId).toBe(b.battleId)
+    const [s1, s2] = await Promise.all([
+      admin().start(tid, `${tid}:E1`, 'admin', 'start-a'),
+      admin().start(tid, `${tid}:E1`, 'admin2', 'start-b'),
+    ])
+    expect(s1.battleId).toBe(a.battleId)
+    expect(s2.battleId).toBe(a.battleId)
+    const actions = await store.list(tid)
+    expect(actions.filter((x) => x.action === 'PREPARE')).toHaveLength(1)
+    expect(actions.filter((x) => x.action === 'START')).toHaveLength(1)
+    const record = await new HttpCombatRecordAdapter(base, SECRET).readRecord(a.battleId, 0)
+    expect(record.status).toBe('IN_BATTLE')
+  }, 60000)
+
   it('un secreto HMAC distinto es rechazado por Combat y Tournament lo reporta como 503', async () => {
     const wrong = new HttpCombatRoomCommandAdapter(base, 'otro-secreto')
     await expect(
