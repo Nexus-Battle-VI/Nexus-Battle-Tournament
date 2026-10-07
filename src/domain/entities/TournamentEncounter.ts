@@ -5,7 +5,7 @@
  * Esta es la proyeccion que Tournament decide mostrar a partir de lo que sabe
  * del bracket y de lo que Combat informa.
  */
-import type { TeamAvatar } from '../registration'
+import type { TeamAvatar, TeamSize, TournamentMode } from '../registration'
 
 export const TournamentMatchStatus = {
   /** El bracket todavia no resolvio los equipos de esta justa (ronda futura). */
@@ -60,12 +60,14 @@ export interface TournamentMatchResult {
 export type CombatRoomStatus = 'PREPARING' | 'IN_BATTLE' | 'FINISHED'
 
 export interface EncounterBracketMetadata {
+  readonly tournamentMode?: TournamentMode
+  readonly teamSize?: TeamSize
   readonly bracketTrack: 'MAIN' | 'SECONDARY' | 'FINAL'
   readonly registeredTeams: readonly ({
     teamId: string
     name: string
     avatar: TeamAvatar
-    memberIds: readonly [string, string]
+    memberIds: readonly string[]
   } | null)[]
   readonly preparationStatus:
     | 'WAITING_TEAMS'

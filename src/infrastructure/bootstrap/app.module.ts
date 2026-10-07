@@ -64,6 +64,20 @@ import type { ReadinessCheck, VersionReport } from '../health/health'
 import { describeError } from '../observability/describe-error'
 import { createLogger, type Logger } from '../observability/logger'
 import { createDatabase, pingDatabase } from '../persistence/database'
+import { PROGRESSIONS, Progressions } from '../../application/use-cases/Progressions'
+import { PRIZES, Prizes } from '../../application/use-cases/Prizes'
+import {
+  LIFECYCLE_REPOSITORY,
+  PRIZE_DESTINATION,
+  type LifecycleRepository,
+  type TournamentPrizeDestination,
+} from '../../application/ports/LifecyclePorts'
+import { ArchivedTournamentMatchReadAdapter } from '../../adapters/outbound/combat/ArchivedTournamentMatchReadAdapter'
+import { InMemoryLifecycleRepository } from '../../adapters/outbound/persistence/InMemoryLifecycleRepository'
+import { PostgresLifecycleRepository } from '../../adapters/outbound/persistence/PostgresLifecycleRepository'
+import { TournamentPrizeClient } from '../../adapters/outbound/http/TournamentPrizeClient'
+import { ResultsPrizesController } from '../../adapters/inbound/http/results-prizes.controller'
+import { LifecycleReconciler } from '../scheduling/lifecycle-reconciler'
 
 export const APP_CONFIG = Symbol('AppConfig')
 export const LOGGER = Symbol('Logger')
@@ -94,8 +108,65 @@ export const INTERNAL_CALLERS: readonly string[] = []
     RegistrationsController,
     BracketsController,
     EncounterAdminController,
+    ResultsPrizesController,
   ],
   providers: [
+    {
+      provide: LIFECYCLE_REPOSITORY,
+      useFactory: (db: Kysely<Database> | null): LifecycleRepository =>
+        db === null ? new InMemoryLifecycleRepository() : new PostgresLifecycleRepository(db),
+      inject: [DATABASE],
+    },
+    {
+      provide: PROGRESSIONS,
+      useFactory: (
+        store: LifecycleRepository,
+        r: Registrations,
+        encounters: TournamentEncounterRepositoryPort,
+        combat: CombatRecordPort,
+        clock: ClockPort,
+      ) =>
+        new Progressions(
+          store,
+          r.repository,
+          new ArchivedTournamentMatchReadAdapter(encounters, combat),
+          clock,
+          encounters,
+        ),
+      inject: [
+        LIFECYCLE_REPOSITORY,
+        REGISTRATIONS,
+        TOURNAMENT_ENCOUNTER_REPOSITORY,
+        COMBAT_RECORD,
+        CLOCK,
+      ],
+    },
+    {
+      provide: PRIZE_DESTINATION,
+      useFactory: (config: AppConfig): TournamentPrizeDestination =>
+        new TournamentPrizeClient(
+          process.env.WALLET_BASE_URL,
+          process.env.INVENTORY_BASE_URL,
+          config.internalServiceAuthSecret,
+        ),
+      inject: [APP_CONFIG],
+    },
+    {
+      provide: PRIZES,
+      useFactory: (
+        store: LifecycleRepository,
+        r: Registrations,
+        destination: TournamentPrizeDestination,
+        clock: ClockPort,
+      ) => new Prizes(store, r.repository, destination, clock),
+      inject: [LIFECYCLE_REPOSITORY, REGISTRATIONS, PRIZE_DESTINATION, CLOCK],
+    },
+    {
+      provide: LifecycleReconciler,
+      useFactory: (progress: Progressions, prizes: Prizes) =>
+        new LifecycleReconciler(progress, prizes),
+      inject: [PROGRESSIONS, PRIZES],
+    },
     {
       provide: REGISTRATIONS,
       useFactory: (

@@ -154,9 +154,12 @@ export class EncounterAdministration {
       operationId: `tournament:${encounter.encounterId}:prepare`,
       tournamentId: encounter.tournamentId,
       encounterId: encounter.encounterId,
+      ...(meta.tournamentMode === undefined
+        ? {}
+        : { tournamentMode: meta.tournamentMode, teamSize: meta.teamSize }),
       teams: [
-        { teamId: a.teamId, memberIds: [a.memberIds[0], a.memberIds[1]] },
-        { teamId: b.teamId, memberIds: [b.memberIds[0], b.memberIds[1]] },
+        { teamId: a.teamId, memberIds: a.memberIds },
+        { teamId: b.teamId, memberIds: b.memberIds },
       ],
     })
     await this.encounters.save({

@@ -13,6 +13,13 @@ import {
   publicTournament,
   publicTeam,
   record,
+  modeSize,
+  teamMemberIds,
+  teamMembers,
+  teamConsented,
+  CONTRACT_VERSION,
+  MODALITIES_CONTRACT_VERSION,
+  type TournamentMode,
   type RegistrationTeam,
   type RegistrationTournament,
   type TeamAvatar,
@@ -59,6 +66,7 @@ const validWalletResult = (
   value.amount === expected.amount
 
 export interface CreateTournament {
+  tournamentMode?: TournamentMode
   operationId: string
   name: string
   opensAt: string
@@ -71,7 +79,8 @@ export interface RegisterTeam {
   operationId: string
   name: string
   avatar: TeamAvatar
-  companionId: string
+  companionId?: string
+  invitedMemberIds?: string[]
 }
 export interface EnterTeam {
   operationId: string
@@ -93,7 +102,7 @@ export class Registrations {
     requireRule(
       results.every(Boolean),
       'INVALID_PLAYER',
-      'Ambos integrantes deben tener una cuenta de jugador activa.',
+      'Todos los integrantes deben tener una cuenta de jugador activa.',
     )
   }
   private team(t: RegistrationTournament, teamId: string): RegistrationTeam {
@@ -119,6 +128,12 @@ export class Registrations {
   }
   async create(subject: string, command: CreateTournament) {
     validateOperation(command.operationId)
+    requireRule(
+      command.tournamentMode === undefined ||
+        ['SOLO', 'DUO', 'TRIO'].includes(command.tournamentMode),
+      'INVALID_MODALITY',
+      'La modalidad debe ser SOLO, DUO o TRIO.',
+    )
     requireRule(
       (command.entryPolicy === undefined) !== (command.entryFee === undefined),
       'INVALID_CONFIGURATION',
@@ -158,10 +173,24 @@ export class Registrations {
       'INVALID_CONFIGURATION',
       'Revisa nombre y orden de las fechas.',
     )
-    const intent = JSON.stringify(['create', subject, name, policy, opensAt, closesAt, startsAt])
+    // No añadir modalidad a las huellas v2: sus replays ya están persistidos.
+    const intent = JSON.stringify([
+      'create',
+      subject,
+      name,
+      policy,
+      opensAt,
+      closesAt,
+      startsAt,
+      ...(command.tournamentMode === undefined ? [] : [command.tournamentMode]),
+    ])
     const t = await this.repository.create(
       {
         id: randomUUID(),
+        tournamentMode: command.tournamentMode ?? 'DUO',
+        teamSize: modeSize(command.tournamentMode ?? 'DUO'),
+        contractVersion:
+          command.tournamentMode === undefined ? CONTRACT_VERSION : MODALITIES_CONTRACT_VERSION,
         name,
         entryPolicy: policy,
         entryFee: entryFeeProjection(policy),
@@ -179,13 +208,26 @@ export class Registrations {
   }
   async register(id: string, subject: string, input: RegisterTeam): Promise<RegistrationTeam> {
     validateOperation(input.operationId)
+    const existing = await this.repository.read(id)
+    const size = existing.teamSize ?? 2
+    const legacy = input.invitedMemberIds === undefined && input.companionId !== undefined
     requireRule(
-      input.companionId.trim().length > 0 && subject !== input.companionId,
+      legacy
+        ? size === 2
+        : input.companionId === undefined && Array.isArray(input.invitedMemberIds),
+      'INVALID_ROSTER',
+      'Usa companionId solo para DUO, o invitedMemberIds para la modalidad configurada.',
+    )
+    const ids = [subject, ...(legacy ? [input.companionId ?? ''] : (input.invitedMemberIds ?? []))]
+    requireRule(
+      ids.length === size &&
+        new Set(ids).size === size &&
+        ids.every((s) => typeof s === 'string' && s.trim().length > 0 && s.length <= 200),
       'INVALID_PLAYER',
-      'Se requieren dos jugadores distintos.',
+      'El equipo debe tener el tamaño exacto y jugadores distintos.',
     )
     requireRule(
-      [subject, input.companionId].includes(input.avatar.subject),
+      ids.includes(input.avatar.subject),
       'INVALID_TEAM_AVATAR',
       'El avatar debe pertenecer a uno de los integrantes.',
     )
@@ -195,12 +237,11 @@ export class Registrations {
       subject,
       normalized,
       input.avatar.subject,
-      input.companionId,
+      legacy ? input.companionId : input.invitedMemberIds,
     ])
-    const existing = await this.repository.read(id)
     const previous = this.replay(existing, input.operationId, intent)
     if (previous !== undefined) return previous
-    await this.eligible(subject, input.companionId)
+    await this.eligible(...ids)
     const identity = await this.accounts.validateIdentity(input.name, input.avatar.subject)
     requireRule(
       identity.name === normalized && identity.avatar.subject === input.avatar.subject,
@@ -218,11 +259,7 @@ export class Registrations {
         409,
       )
       requireRule(
-        !t.teams.some(
-          (team) =>
-            team.status !== 'CANCELLED' &&
-            [subject, input.companionId].some((s) => memberOf(team, s)),
-        ),
+        !t.teams.some((team) => team.status !== 'CANCELLED' && ids.some((s) => memberOf(team, s))),
         'ALREADY_REGISTERED',
         'Uno de los integrantes ya pertenece a un equipo activo.',
         409,
@@ -234,14 +271,21 @@ export class Registrations {
         name: identity.name,
         avatar: identity.avatar,
         ownerId: subject,
-        companionId: input.companionId,
-        status: 'AWAITING_CONSENT',
+        companionId: size === 2 ? (ids[1] ?? null) : null,
+        members: ids.map((player, position) => ({
+          subject: player,
+          position,
+          consentAt: position === 0 ? now : null,
+          consentVersion:
+            position === 0 ? (legacy ? 'team-registration-v2' : 'team-registration-v3') : null,
+        })),
+        status: size === 1 ? 'PENDING_PAYMENT' : 'AWAITING_CONSENT',
         createdAt: now,
         ownerConsentAt: now,
-        ownerConsentVersion: 'team-registration-v2',
+        ownerConsentVersion: legacy ? 'team-registration-v2' : 'team-registration-v3',
         identityPolicyVersion: identity.policyVersion,
-        consentAt: null,
-        consentVersion: null,
+        consentAt: size === 1 ? now : null,
+        consentVersion: size === 1 ? 'team-registration-v3' : null,
         slot: null,
         paymentOperationId: null,
         chargeId: null,
@@ -252,7 +296,7 @@ export class Registrations {
           kind: 'TEAM_REGISTRATION',
           tournamentId: id,
           teamId,
-          memberIds: [subject, input.companionId],
+          memberIds: ids,
           registeredAt: now,
           status: 'REGISTERED',
         },
@@ -274,15 +318,15 @@ export class Registrations {
     const t = await this.repository.read(id)
     const team = this.team(t, teamId)
     requireRule(
-      team.companionId === subject,
+      memberOf(team, subject) && team.ownerId !== subject,
       'FORBIDDEN',
-      'Solo el compañero puede aceptar o rechazar.',
+      'Solo un integrante invitado puede aceptar o rechazar.',
       403,
     )
     const intent = JSON.stringify(['consent', subject, teamId, accept])
     const previous = this.replay(t, operationId, intent)
     if (previous !== undefined) return previous
-    if (accept) await this.eligible(team.ownerId, subject)
+    if (accept) await this.eligible(...teamMemberIds(team))
     return this.repository.change(id, (current) => {
       const replay = this.replay(current, operationId, intent)
       if (replay !== undefined) return replay
@@ -300,9 +344,15 @@ export class Registrations {
           'La inscripción no está abierta.',
           409,
         )
-      target.status = accept ? 'PENDING_PAYMENT' : 'CANCELLED'
-      target.consentAt = accept ? this.clock.now().toISOString() : null
-      target.consentVersion = accept ? 'team-registration-v2' : null
+      target.members ??= teamMembers(target)
+      const member = target.members.find((m) => m.subject === subject)
+      requireRule(member !== undefined, 'FORBIDDEN', 'No perteneces al equipo.', 403)
+      member.consentAt = accept ? (member.consentAt ?? this.clock.now().toISOString()) : null
+      member.consentVersion = accept ? target.ownerConsentVersion : null
+      const complete = accept && teamConsented(target, current.teamSize ?? 2)
+      target.status = accept ? (complete ? 'PENDING_PAYMENT' : 'AWAITING_CONSENT') : 'CANCELLED'
+      target.consentAt = complete ? this.clock.now().toISOString() : null
+      target.consentVersion = complete ? target.ownerConsentVersion : null
       saveOperation(current, operationId, { intent, teamId })
       return target
     })
@@ -412,7 +462,7 @@ export class Registrations {
         'Ya existe un pago o el equipo no puede confirmarse.',
         409,
       )
-      await this.eligible(team.ownerId, team.companionId)
+      await this.eligible(...teamMemberIds(team))
     }
     if (op === undefined && selected === 'SIMULATED_MONEY')
       requireRule(
@@ -444,9 +494,9 @@ export class Registrations {
         409,
       )
       requireRule(
-        target.consentAt !== null && target.consentVersion === 'team-registration-v2',
+        teamConsented(target, t.teamSize ?? 2),
         'CONSENT_REQUIRED',
-        'El compañero debe aceptar antes del pago.',
+        'Todos los integrantes deben consentir antes del pago.',
         409,
       )
       requireRule(
@@ -680,7 +730,14 @@ export class Registrations {
     ).length
     return {
       tournament: publicTournament(t, this.clock.now()),
-      capacity: { confirmed, reserved, available: 8 - confirmed - reserved },
+      capacity: {
+        confirmed,
+        reserved,
+        available: 8 - confirmed - reserved,
+        teamSize: t.teamSize ?? 2,
+        confirmedPeople: confirmed * (t.teamSize ?? 2),
+        totalPeople: 8 * (t.teamSize ?? 2),
+      },
       teams: t.teams.filter((x) => memberOf(x, subject)).map((team) => publicTeam(id, team)),
     }
   }

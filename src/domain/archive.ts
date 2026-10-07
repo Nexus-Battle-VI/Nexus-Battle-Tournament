@@ -45,7 +45,9 @@ export const mergeArchivedEncounter = (
       : {
           bracketMetadata: {
             ...metadata,
-            registeredTeams: current.bracketMetadata?.registeredTeams ?? metadata.registeredTeams,
+            registeredTeams: current.bracketMetadata?.registeredTeams.every((team) => team !== null)
+              ? current.bracketMetadata.registeredTeams
+              : metadata.registeredTeams,
             preparationStatus:
               status === 'FINISHED'
                 ? 'FINISHED'

@@ -3,8 +3,11 @@ import type {
   EntryPolicy,
   RegistrationTeam,
   RegistrationOperation,
+  TeamSize,
+  TournamentMode,
 } from '../../../domain/registration'
 import type { PublishedBracket } from '../../../domain/bracket'
+import type { TournamentLifecycle } from '../../../application/ports/LifecyclePorts'
 import type { EncounterBracketMetadata } from '../../../domain/entities/TournamentEncounter'
 
 import type { TournamentEncounterTeam } from '../../../domain/entities/TournamentEncounter'
@@ -92,6 +95,10 @@ export interface TournamentCombatEventTable {
 }
 
 export interface Database {
+  tournament_lifecycle: {
+    tournament_id: string
+    data: ColumnType<TournamentLifecycle, string, string>
+  }
   tournaments: RegistrationTournamentTable
   registration_teams: RegistrationTeamTable
   registration_members: { tournament_id: string; team_id: string; player_id: string }
@@ -112,6 +119,9 @@ export interface TournamentEncounterActionTable {
   readonly occurred_at: ColumnType<Date, Date, never>
 }
 export interface RegistrationTournamentTable {
+  tournament_mode: ColumnType<TournamentMode, TournamentMode | undefined, never>
+  team_size: ColumnType<TeamSize, TeamSize | undefined, never>
+  contract_version: ColumnType<string, string | undefined, never>
   id: string
   name: string
   entry_policy: ColumnType<EntryPolicy, string, never>
@@ -126,7 +136,7 @@ export interface RegistrationTeamTable {
   id: string
   tournament_id: string
   owner_id: string
-  companion_id: string
+  companion_id: string | null
   status: string
   slot: number | null
   data: ColumnType<RegistrationTeam, string, string>
