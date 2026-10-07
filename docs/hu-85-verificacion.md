@@ -14,6 +14,8 @@ Fuente: [HU-85.4 #488](https://github.com/Nexus-Battle-VI/Nexus-Battle-Managemen
 | Account y Player-Inventory (los llama Combat)         | No se usan                                                                         | **Dobles de prueba** locales mínimos que no validan la firma |
 | Cognito, Wallet, Notificaciones, PostgreSQL de Combat | No probados                                                                        | No probados (Combat usa su persistencia en memoria)          |
 
+Además, `test/db/real-combat-postgres-hu85.spec.ts` ejecuta el recorrido completo por HTTP con el módulo Nest real de Tournament configurado solo por variables de entorno (`COMBAT_BASE_URL`, `INTERNAL_SERVICE_AUTH_SECRET`, `DATABASE_URL`), **PostgreSQL real en Docker con todas las migraciones** y **Combat real**. Sus dobles son los JWT, Account/Wallet de registro (para crear el torneo y el bracket) y Account/Inventory de Combat. Cubre C1–C4 y C6–C8 de punta a punta, con dos administradores y recibos en la tabla `tournament_encounter_actions`.
+
 Ninguna prueba demuestra el comportamiento en producción ni con usuarios reales.
 
 ## Cómo repetir
@@ -26,6 +28,8 @@ npx jest --config jest.db.config.ts --runInBand
 # Combat real: compilar Combat una vez y apuntar a su carpeta
 (cd ../Nexus-Battle-Combat && npm ci && npm run build)
 HU85_REAL_COMBAT_DIR=../Nexus-Battle-Combat npx jest --selectProjects integration test/integration/real-combat-hu85.spec.ts
+# Combat real + PostgreSQL en Docker + módulo Nest real (Docker abierto)
+HU85_REAL_COMBAT_DIR=../Nexus-Battle-Combat npx jest --config jest.db.config.ts --runInBand test/db/real-combat-postgres-hu85.spec.ts
 ```
 
 Sin `HU85_REAL_COMBAT_DIR` el archivo de Combat real se omite (queda como «skipped», no como aprobado).
@@ -65,4 +69,4 @@ Siguen sin regla aprobada y esta entrega **no** las implementa: ausencias, calen
 
 ## Qué no se verificó
 
-Cognito real y roles reales; Account e Inventory reales (Combat los consume como dobles); Wallet y premios; transmisión; despliegue y variables (`COMBAT_BASE_URL`, `INTERNAL_SERVICE_AUTH_SECRET` y la lista de llamadores de Combat en un entorno real); concurrencia entre instancias contra Combat real; Combat con persistencia real; el avance del bracket (HU-80).
+Cognito real y roles reales; Account e Inventory reales (Combat los consume como dobles); Wallet y premios; transmisión; despliegue real (la rama de Infrastructure agrega `COMBAT_BASE_URL` al servicio `tournament` en compose; no se desplegó); concurrencia entre instancias contra Combat real; Combat con persistencia real; el avance del bracket (HU-80).
