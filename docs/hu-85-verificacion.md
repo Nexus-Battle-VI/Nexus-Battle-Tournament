@@ -53,6 +53,7 @@ Resultado observado en la última ejecución local el 2026-10-06. «Local» = do
 | C10b Respuesta perdida tras crear la sala    | CA-04       | El reintento reutiliza la sala                                                                     | Cumple                                                    | Cumple por igualdad de sala tras «reiniciar» Tournament con recibos vacíos                                                                 |
 | C11 Mismo `operationId` en otra justa/acción | CA-03       | 409 `OPERATION_CONFLICT`                                                                           | Cumple                                                    | Cumple: otra justa con el mismo `operationId` da 409; Combat real responde 409 al mismo `operationId` con otro cuerpo                      |
 | C12 Iniciar sin preparar                     | CA-03       | 409 `ENCOUNTER_NOT_PREPARED`; sin llamar a Combat                                                  | Cumple                                                    | Cumple: 409 sin llamar a Combat; Combat real responde 409 a un inicio de sala inexistente                                                  |
+| C13 Paso del tiempo sin iniciar              | CA-03       | Sin derrota, ganador ni cierre automáticos; nada pasa a `FINISHED` por ausencia                    | Cumple (HTTP)                                             | Cumple: un año después iniciar no fija resultado ni cierre y el registro de Combat sigue sin resultado                                     |
 
 La base de datos impide por sí misma duplicar recibos (acción por justa y `operationId`), acciones inválidas y justas inexistentes (prueba `test/db/encounter-admin.spec.ts`).
 
@@ -65,7 +66,7 @@ La base de datos impide por sí misma duplicar recibos (acción por justa y `ope
 
 ## Decisiones de negocio NO aprobadas
 
-Siguen sin regla aprobada y esta entrega **no** las implementa: ausencias, calendario, reprogramación y cancelación (sin derrotas automáticas); tamaño de equipo (2 vs hasta 6); auditoría de intentos rechazados. El contrato las marca como pendientes.
+Siguen sin regla aprobada y esta entrega **no** las implementa: reprogramación, cancelación y reacción a fechas vencidas (la regla firme de la HU, sin derrotas ni ganadores automáticos, sí se cumple y se prueba en C13); tamaño de equipo (2 vs hasta 6); auditoría de intentos rechazados. El contrato las marca como pendientes.
 
 ## Qué no se verificó
 

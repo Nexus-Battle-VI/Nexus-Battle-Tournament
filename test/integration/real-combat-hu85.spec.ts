@@ -209,6 +209,21 @@ suite('HU-85.4 contra Combat real (Account e Inventory son dobles de prueba)', (
     expect(record.status).toBe('IN_BATTLE')
   }, 60000)
 
+  it('C13 real: sin derrotas automáticas; un año después iniciar no fija resultado ni cierre', async () => {
+    await admin().prepare(tid, `${tid}:E1`, 'admin', 'prep-e1')
+    f.setNow('2027-12-31T00:00:00Z')
+    await expect(admin().prepare(tid, `${tid}:E5`, 'admin', 'prep-e5')).rejects.toMatchObject({
+      status: 409,
+    })
+    const started = await admin().start(tid, `${tid}:E1`, 'admin', 'start-e1')
+    const encounter = await f.encounters.findOne(tid, `${tid}:E1`)
+    expect(started.status).toBe('IN_PROGRESS')
+    expect(encounter).toMatchObject({ result: null, closedAt: null })
+    expect(encounter?.status).not.toBe('FINISHED')
+    const record = await new HttpCombatRecordAdapter(base, SECRET).readRecord(started.battleId, 0)
+    expect(record.result).toBeNull()
+  }, 60000)
+
   it('un secreto HMAC distinto es rechazado por Combat y Tournament lo reporta como 503', async () => {
     const wrong = new HttpCombatRoomCommandAdapter(base, 'otro-secreto')
     await expect(
