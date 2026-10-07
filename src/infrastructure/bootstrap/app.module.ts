@@ -21,6 +21,22 @@ import { PersistedBracketEncounterSource } from '../../adapters/outbound/bracket
 import { HttpCombatRecordAdapter } from '../../adapters/outbound/combat/HttpCombatRecordAdapter'
 import { RegistrationsController } from '../../adapters/inbound/http/registrations.controller'
 import { BracketsController } from '../../adapters/inbound/http/brackets.controller'
+import { EncounterAdminController } from '../../adapters/inbound/http/encounter-admin.controller'
+import {
+  ENCOUNTER_ADMINISTRATION,
+  EncounterAdministration,
+} from '../../application/use-cases/EncounterAdministration'
+import {
+  COMBAT_ROOM_COMMANDS,
+  type CombatRoomCommandPort,
+} from '../../application/ports/CombatRoomCommandPort'
+import {
+  ENCOUNTER_ADMIN_STORE,
+  type EncounterAdminStore,
+} from '../../application/ports/EncounterAdminPorts'
+import { HttpCombatRoomCommandAdapter } from '../../adapters/outbound/combat/HttpCombatRoomCommandAdapter'
+import { InMemoryEncounterAdminStore } from '../../adapters/outbound/persistence/InMemoryEncounterAdminStore'
+import { PostgresEncounterAdminStore } from '../../adapters/outbound/persistence/PostgresEncounterAdminStore'
 import { Registrations, REGISTRATIONS } from '../../application/use-cases/Registrations'
 import { Brackets, BRACKETS } from '../../application/use-cases/Brackets'
 import { RegistrationServices } from '../../adapters/outbound/http/RegistrationServices'
@@ -77,6 +93,7 @@ export const INTERNAL_CALLERS: readonly string[] = []
     TournamentMatchesController,
     RegistrationsController,
     BracketsController,
+    EncounterAdminController,
   ],
   providers: [
     {
@@ -274,6 +291,46 @@ export const INTERNAL_CALLERS: readonly string[] = []
       useFactory: (config: AppConfig): CombatRecordPort =>
         new HttpCombatRecordAdapter(process.env.COMBAT_BASE_URL, config.internalServiceAuthSecret),
       inject: [APP_CONFIG],
+    },
+    // --- HU-85 (Management#470): preparar e iniciar justas -----------------
+    {
+      provide: COMBAT_ROOM_COMMANDS,
+      useFactory: (config: AppConfig): CombatRoomCommandPort =>
+        new HttpCombatRoomCommandAdapter(
+          process.env.COMBAT_BASE_URL,
+          config.internalServiceAuthSecret,
+        ),
+      inject: [APP_CONFIG],
+    },
+    {
+      provide: ENCOUNTER_ADMIN_STORE,
+      useFactory: (db: Kysely<Database> | null): EncounterAdminStore =>
+        db === null ? new InMemoryEncounterAdminStore() : new PostgresEncounterAdminStore(db),
+      inject: [DATABASE],
+    },
+    {
+      provide: ENCOUNTER_ADMINISTRATION,
+      useFactory: (
+        repository: TournamentEncounterRepositoryPort,
+        source: TournamentEncounterSourcePort,
+        combat: CombatRecordPort,
+        commands: CombatRoomCommandPort,
+        store: EncounterAdminStore,
+        clock: ClockPort,
+        brackets: Brackets,
+      ): EncounterAdministration =>
+        new EncounterAdministration(repository, source, combat, commands, store, clock, (id) =>
+          brackets.view(id),
+        ),
+      inject: [
+        TOURNAMENT_ENCOUNTER_REPOSITORY,
+        TOURNAMENT_ENCOUNTER_SOURCE,
+        COMBAT_RECORD,
+        COMBAT_ROOM_COMMANDS,
+        ENCOUNTER_ADMIN_STORE,
+        CLOCK,
+        BRACKETS,
+      ],
     },
     {
       provide: LIST_TOURNAMENT_MATCHES,

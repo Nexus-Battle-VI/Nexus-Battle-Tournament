@@ -116,7 +116,8 @@ Salidas firmadas como servicio `tournament`, HMAC-SHA256 y timestamp en milisegu
 
 - Account: `GET /api/internal/accounts/:subject/tournament-eligibility` y `POST /api/internal/accounts/tournament-team-identity/validation` con `{name,avatarSubject}`. Se comprueban ecos y `account-team-identity-v1`.
 - Wallet: `POST /api/internal/v1/wallet/tournament-entry-fees` con la intención fijada y `POST /api/internal/v1/wallet/tournament-entry-fees/:chargeId/refunds` con `{operationId}`. Se comprueban `operationId`, pagador, torneo, equipo, importe, chargeId, estado y booleano `applied`.
-- Combat, solo lectura: `GET /api/internal/v1/combat/tournament-rooms/:roomId/record?afterSeq=N`. La firma usa el path sin query según el guard publicado de Combat. No se crean ni inician salas.
+- Combat, lectura: `GET /api/internal/v1/combat/tournament-rooms/:roomId/record?afterSeq=N`. La firma usa el path sin query según el guard publicado de Combat.
+- Combat, escritura (HU-85): `POST /api/internal/v1/combat/tournament-rooms` (crea la sala de una justa) y `POST /api/internal/v1/combat/tournament-rooms/:roomId/start`. El `operationId` hacia Combat es determinista (`tournament:<encounterId>:prepare|start`), de modo que cualquier reintento llega a la misma sala. Combat responde 422 con bloqueos si un participante no es elegible; Tournament los reenvía sin inventar participantes.
 
 ## Migraciones
 
@@ -124,7 +125,18 @@ Salidas firmadas como servicio `tournament`, HMAC-SHA256 y timestamp en milisegu
 2. `002-tournament-registration`: agrega `tournaments`, operaciones administrativas, equipos, pertenencias activas y operaciones de registro/pago. Restricciones de estado/cupo, cupo único, pertenencia única y exclusión global de calendario.
 3. `003-tournament-bracket`: agrega snapshot y metadata nullable a encounters. Triggers comprueban roster, snapshot e identidad, impiden mutación y materializan catorce filas en la transacción de publicación. No recrea tablas de HU-83 ni incorpora `003-encounters` de la copia original.
 
-Preparación local: `npm ci`, `npm run build`, configurar PostgreSQL y `npm run migrate`; después arrancar con `npm start`. La composición no migra automáticamente. La instalación nueva aplica 001→002→003; una base publicada con 001 aplica solo 002→003. No hay importación automática desde el esquema incompatible sin publicar de la copia original. Las pruebas de actualización parten de 001 con roster, resultado y 120 eventos, comprueban preservación y páginas de 100+20.
+4. `004-tournament-admin-actions` (HU-85): tabla `tournament_encounter_actions` con los recibos de preparar/iniciar (actor, justa, acción, fecha y sala). Solo de adición; únicos `(torneo, justa, acción)` y `(torneo, operación)`.
+
+Preparación local: `npm ci`, `npm run build`, configurar PostgreSQL y `npm run migrate`; después arrancar con `npm start`. La composición no migra automáticamente. La instalación nueva aplica 001→002→003→004; una base publicada con 001 aplica 002→003→004. No hay importación automática desde el esquema incompatible sin publicar de la copia original. Las pruebas de actualización parten de 001 con roster, resultado y 120 eventos, comprueban preservación y páginas de 100+20.
+
+## Administración de justas (HU-85)
+
+Contrato: `Nexus-Battle-Infrastructure/docs/contracts/hu-85-tournament-encounter-administration-v1.md` (propuesta pendiente de revisión). Rutas bajo `/api/v1/tournaments/admin`, solo administradores, con el actor tomado del JWT:
+
+- `POST /:tournamentId/matches/:matchId/prepare` y `POST /:tournamentId/matches/:matchId/start`, cuerpo `{operationId}`. `matchId` es el identificador completo de HU-83 (`<tournamentId>:E1`).
+- `GET /:tournamentId/actions`: recibos en orden cronológico.
+
+Cada justa se serializa por sí misma; no hay bloqueo de torneo ni dependencia de la transmisión. Repetir una acción devuelve el recibo original con `replayed:true`. Ausencias, calendario, reprogramación y cancelación no tienen regla aprobada y no se implementan. La verificación y sus límites se registran en `docs/hu-85-verificacion.md` (tarea HU-85.4).
 
 ## Verificación y límites
 
