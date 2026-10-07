@@ -1,6 +1,7 @@
 import { IsInt, IsOptional, Min } from 'class-validator'
 import { Type } from 'class-transformer'
 import { ApiPropertyOptional } from '@nestjs/swagger'
+import type { ConvocationExtension } from '../../../../domain/convocation'
 
 import type { CombatEventPage } from '../../../../domain/entities/CombatEventRecord'
 import type {
@@ -36,7 +37,7 @@ export interface MatchResultResponse {
   readonly finishedAt: string
 }
 
-export interface MatchSummaryResponse {
+export interface MatchSummaryResponse extends Partial<Omit<ConvocationExtension, 'round'>> {
   readonly encounterId?: string
   readonly bracketTrack?: EncounterBracketMetadata['bracketTrack']
   readonly registeredTeams?: EncounterBracketMetadata['registeredTeams']

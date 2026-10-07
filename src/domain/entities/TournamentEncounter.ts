@@ -60,6 +60,7 @@ export interface TournamentMatchResult {
 export type CombatRoomStatus = 'PREPARING' | 'IN_BATTLE' | 'FINISHED'
 
 export interface EncounterBracketMetadata {
+  readonly acceptancePolicy?: 'ROUND_ACCEPTANCE_V1'
   readonly tournamentMode?: TournamentMode
   readonly teamSize?: TeamSize
   readonly bracketTrack: 'MAIN' | 'SECONDARY' | 'FINAL'

@@ -8,7 +8,11 @@ import {
 import { RegistrationError, requireRule } from '../../domain/registration'
 import type { ClockPort } from '../ports/ClockPort'
 import type { RegistrationRepository } from '../ports/RegistrationPorts'
-import type { LifecycleRepository, TournamentPrizeDestination } from '../ports/LifecyclePorts'
+import type {
+  LifecycleRepository,
+  TournamentPrizeDestination,
+  TournamentPrizeRecipients,
+} from '../ports/LifecyclePorts'
 export const PRIZES = Symbol('Prizes')
 export class Prizes {
   constructor(
@@ -16,6 +20,7 @@ export class Prizes {
     private readonly tournaments: RegistrationRepository,
     private readonly destination: TournamentPrizeDestination,
     private readonly clock: ClockPort,
+    private readonly recipients?: TournamentPrizeRecipients,
   ) {}
   async view(id: string) {
     await this.tournaments.read(id)
@@ -85,7 +90,24 @@ export class Prizes {
       )
         continue
       try {
-        const command = grantCommand(line)
+        if (line.heroId === null && this.recipients !== undefined) {
+          const hero = await this.recipients.heroFor(line.playerId)
+          requireRule(
+            hero !== null && hero.trim().length > 0,
+            'PRIZE_RECIPIENT_REQUIRED',
+            'El receptor no tiene un héroe elegible.',
+            409,
+          )
+          await this.repository.change(id, (s) => {
+            const current = s.delivery?.lines.find((l) => l.operationId === line.operationId)
+            if (current?.heroId === null) current.heroId = hero
+          })
+        }
+        const current = (await this.repository.read(id)).delivery?.lines.find(
+          (l) => l.operationId === line.operationId,
+        )
+        if (current === undefined) throw new Error('Missing persisted prize right')
+        const command = grantCommand(current)
         const receiptId = validatePrizeReceipt(command, await this.destination.grant(command))
         await this.repository.change(id, (s) => {
           const current = s.delivery?.lines.find((l) => l.operationId === line.operationId)
@@ -100,13 +122,16 @@ export class Prizes {
           current.status = 'DELIVERED'
           current.deliveredAt ??= this.clock.now().toISOString()
           current.lastError = null
+          current.responsible = null
         })
       } catch (error: unknown) {
         await this.repository.change(id, (s) => {
           const current = s.delivery?.lines.find((l) => l.operationId === line.operationId)
-          if (current?.status === 'PENDING')
+          if (current?.status === 'PENDING') {
             current.lastError =
               error instanceof RegistrationError ? error.code : 'PRIZE_DESTINATION_UNAVAILABLE'
+            current.responsible = 'PRIZE_OPERATIONS'
+          }
         })
       }
     }

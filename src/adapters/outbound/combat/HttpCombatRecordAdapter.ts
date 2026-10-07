@@ -3,7 +3,7 @@ import type {
   CombatRoomRecord,
   CombatRoomStatus,
 } from '../../../application/ports/CombatRecordPort'
-import { RegistrationError, record, requireRule } from '../../../domain/registration'
+import { RegistrationError, record, requireRule, modeSize } from '../../../domain/registration'
 import { signInternalRequest } from '../identity/internal-signature'
 const validDate = (value: unknown): value is string =>
   typeof value === 'string' && Number.isFinite(new Date(value).getTime())
@@ -71,6 +71,22 @@ export class HttpCombatRecordAdapter implements CombatRecordPort {
       503,
     )
     const page = data.events
+    let teamSize = 2
+    if (data.tournament !== undefined) {
+      const configuration = data.tournament
+      requireRule(
+        record(configuration) &&
+          configuration.contractVersion === 3 &&
+          (configuration.mode === 'SOLO' ||
+            configuration.mode === 'DUO' ||
+            configuration.mode === 'TRIO') &&
+          configuration.teamSize === modeSize(configuration.mode),
+        'SERVICE_UNAVAILABLE',
+        'Combat devolvió una modalidad incompatible.',
+        503,
+      )
+      teamSize = modeSize(configuration.mode)
+    }
     const items = page.items as unknown[]
     const labels = new Set<string>()
     const players = new Set<string>()
@@ -81,7 +97,7 @@ export class HttpCombatRecordAdapter implements CombatRecordPort {
           team.teamId.length > 0 &&
           !labels.has(team.teamId) &&
           Array.isArray(team.participants) &&
-          team.participants.length === 2,
+          team.participants.length === teamSize,
         'SERVICE_UNAVAILABLE',
         'Combat devolvió equipos incompatibles.',
         503,

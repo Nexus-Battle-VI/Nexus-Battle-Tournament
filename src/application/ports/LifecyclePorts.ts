@@ -2,6 +2,10 @@ import type { Champion, ConfirmedMatchResult, ProgressBracket } from '../../doma
 import type { PrizeConfiguration, PrizeDelivery, PrizeGrant } from '../../domain/prize'
 export const LIFECYCLE_REPOSITORY = Symbol('LifecycleRepository')
 export const PRIZE_DESTINATION = Symbol('TournamentPrizeDestination')
+export const PRIZE_RECIPIENTS = Symbol('TournamentPrizeRecipients')
+export interface TournamentPrizeRecipients {
+  heroFor(subject: string): Promise<string | null>
+}
 export interface TournamentLifecycle {
   tournamentId: string
   results: ConfirmedMatchResult[]

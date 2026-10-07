@@ -1,4 +1,9 @@
-import { confirmMatch, declareChampion, projectBracket } from '../../domain/progression'
+import {
+  confirmMatch,
+  confirmTournamentResolution,
+  declareChampion,
+  projectBracket,
+} from '../../domain/progression'
 import { requireRule } from '../../domain/registration'
 import type { ClockPort } from '../ports/ClockPort'
 import type { RegistrationRepository } from '../ports/RegistrationPorts'
@@ -6,6 +11,7 @@ import type { EncounterProgress, LifecycleRepository } from '../ports/LifecycleP
 import type { TournamentMatchReadPort } from '../ports/TournamentMatchReadPort'
 import type { TournamentEncounterRepositoryPort } from '../ports/TournamentEncounterRepositoryPort'
 import { bracketEncounters } from '../../domain/bracket'
+import type { MatchAcceptanceStore } from '../ports/MatchAcceptancePorts'
 export const PROGRESSIONS = Symbol('Progressions')
 export class Progressions implements EncounterProgress {
   constructor(
@@ -14,6 +20,7 @@ export class Progressions implements EncounterProgress {
     private readonly matches: TournamentMatchReadPort,
     private readonly clock: ClockPort,
     private readonly encounters?: TournamentEncounterRepositoryPort,
+    private readonly acceptance?: MatchAcceptanceStore,
   ) {}
   async view(id: string) {
     const tournament = await this.tournaments.read(id),
@@ -48,6 +55,18 @@ export class Progressions implements EncounterProgress {
   async confirm(id: string, encounterId: string): Promise<void> {
     const bracket = (await this.tournaments.read(id)).bracket
     requireRule(bracket !== null, 'BRACKET_REQUIRED', 'No hay llaves publicadas.', 409)
+    const resolution = (await this.acceptance?.resolutions(id))?.find(
+      (r) => r.encounterId === encounterId,
+    )
+    if (resolution !== undefined) {
+      await this.repository.change(id, (state) => {
+        confirmTournamentResolution(bracket, state.results, resolution)
+        if (resolution.encounterId === bracket.matches.find((m) => m.id === 'Final')?.encounterId)
+          state.champion ??= declareChampion(bracket, state.results, null, resolution.resolvedAt)
+      })
+      await this.resolveTeams(id)
+      return
+    }
     const e = await this.matches.read(id, encounterId)
     requireRule(e !== null, 'MATCH_NOT_FOUND', 'No existe esta justa en el archivo oficial.', 404)
     if (e.status !== 'FINISHED') return

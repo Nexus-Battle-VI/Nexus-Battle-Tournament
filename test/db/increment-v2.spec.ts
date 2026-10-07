@@ -200,6 +200,7 @@ describe('Combinación HU-77/84/78/83 en PostgreSQL real aislado', () => {
       '003-tournament-bracket',
       '004-tournament-admin-actions',
       '006-tournament-mode-members-progression',
+      '007-tournament-round-acceptance-resolution',
     ])
     expect(await archive.findOne(original.tournamentId, original.encounterId)).toEqual(original)
     const f = fixture(new PostgresRegistrationRepository(db))
@@ -225,6 +226,7 @@ describe('Combinación HU-77/84/78/83 en PostgreSQL real aislado', () => {
       '003-tournament-bracket',
       '004-tournament-admin-actions',
       '006-tournament-mode-members-progression',
+      '007-tournament-round-acceptance-resolution',
     ])
   })
   it('conserva registro/consentimientos/recibos al reconstruir adaptadores', async () => {

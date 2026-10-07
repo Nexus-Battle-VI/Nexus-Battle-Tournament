@@ -78,6 +78,27 @@ import { PostgresLifecycleRepository } from '../../adapters/outbound/persistence
 import { TournamentPrizeClient } from '../../adapters/outbound/http/TournamentPrizeClient'
 import { ResultsPrizesController } from '../../adapters/inbound/http/results-prizes.controller'
 import { LifecycleReconciler } from '../scheduling/lifecycle-reconciler'
+import {
+  MATCH_ACCEPTANCE_STORE,
+  FAIR_RANDOM,
+  type MatchAcceptanceStore,
+  type FairRandomPort,
+} from '../../application/ports/MatchAcceptancePorts'
+import { MATCH_ACCEPTANCE, MatchAcceptance } from '../../application/use-cases/MatchAcceptance'
+import {
+  ACCEPTANCE_RECONCILIATION,
+  AcceptanceReconciliation,
+} from '../../application/use-cases/AcceptanceReconciliation'
+import { InMemoryMatchAcceptanceStore } from '../../adapters/outbound/persistence/InMemoryMatchAcceptanceStore'
+import { PostgresMatchAcceptanceStore } from '../../adapters/outbound/persistence/PostgresMatchAcceptanceStore'
+import { CryptoFairRandom } from '../../adapters/outbound/system/CryptoFairRandom'
+import { AcceptanceReconciler } from '../scheduling/acceptance-reconciler'
+import { MatchAcceptanceController } from '../../adapters/inbound/http/match-acceptance.controller'
+import {
+  PRIZE_RECIPIENTS,
+  type TournamentPrizeRecipients,
+} from '../../application/ports/LifecyclePorts'
+import { UnavailableTournamentPrizeRecipients } from '../../adapters/outbound/system/UnavailableTournamentPrizeRecipients'
 
 export const APP_CONFIG = Symbol('AppConfig')
 export const LOGGER = Symbol('Logger')
@@ -109,8 +130,46 @@ export const INTERNAL_CALLERS: readonly string[] = []
     BracketsController,
     EncounterAdminController,
     ResultsPrizesController,
+    MatchAcceptanceController,
   ],
   providers: [
+    {
+      provide: PRIZE_RECIPIENTS,
+      useFactory: (): TournamentPrizeRecipients => new UnavailableTournamentPrizeRecipients(),
+    },
+    {
+      provide: MATCH_ACCEPTANCE_STORE,
+      useFactory: (db: Kysely<Database> | null): MatchAcceptanceStore =>
+        db === null ? new InMemoryMatchAcceptanceStore() : new PostgresMatchAcceptanceStore(db),
+      inject: [DATABASE],
+    },
+    { provide: FAIR_RANDOM, useFactory: (): FairRandomPort => new CryptoFairRandom() },
+    {
+      provide: MATCH_ACCEPTANCE,
+      useFactory: (
+        store: MatchAcceptanceStore,
+        r: Registrations,
+        p: Progressions,
+        clock: ClockPort,
+        random: FairRandomPort,
+      ) => new MatchAcceptance(store, r.repository, p, clock, random),
+      inject: [MATCH_ACCEPTANCE_STORE, REGISTRATIONS, PROGRESSIONS, CLOCK, FAIR_RANDOM],
+    },
+    {
+      provide: ACCEPTANCE_RECONCILIATION,
+      useFactory: (
+        r: Registrations,
+        a: MatchAcceptance,
+        admin: EncounterAdministration,
+        p: Progressions,
+      ) => new AcceptanceReconciliation(r.repository, a, admin, p),
+      inject: [REGISTRATIONS, MATCH_ACCEPTANCE, ENCOUNTER_ADMINISTRATION, PROGRESSIONS],
+    },
+    {
+      provide: AcceptanceReconciler,
+      useFactory: (r: AcceptanceReconciliation) => new AcceptanceReconciler(r),
+      inject: [ACCEPTANCE_RECONCILIATION],
+    },
     {
       provide: LIFECYCLE_REPOSITORY,
       useFactory: (db: Kysely<Database> | null): LifecycleRepository =>
@@ -125,6 +184,7 @@ export const INTERNAL_CALLERS: readonly string[] = []
         encounters: TournamentEncounterRepositoryPort,
         combat: CombatRecordPort,
         clock: ClockPort,
+        acceptance: MatchAcceptanceStore,
       ) =>
         new Progressions(
           store,
@@ -132,6 +192,7 @@ export const INTERNAL_CALLERS: readonly string[] = []
           new ArchivedTournamentMatchReadAdapter(encounters, combat),
           clock,
           encounters,
+          acceptance,
         ),
       inject: [
         LIFECYCLE_REPOSITORY,
@@ -139,6 +200,7 @@ export const INTERNAL_CALLERS: readonly string[] = []
         TOURNAMENT_ENCOUNTER_REPOSITORY,
         COMBAT_RECORD,
         CLOCK,
+        MATCH_ACCEPTANCE_STORE,
       ],
     },
     {
@@ -158,8 +220,9 @@ export const INTERNAL_CALLERS: readonly string[] = []
         r: Registrations,
         destination: TournamentPrizeDestination,
         clock: ClockPort,
-      ) => new Prizes(store, r.repository, destination, clock),
-      inject: [LIFECYCLE_REPOSITORY, REGISTRATIONS, PRIZE_DESTINATION, CLOCK],
+        recipients: TournamentPrizeRecipients,
+      ) => new Prizes(store, r.repository, destination, clock, recipients),
+      inject: [LIFECYCLE_REPOSITORY, REGISTRATIONS, PRIZE_DESTINATION, CLOCK, PRIZE_RECIPIENTS],
     },
     {
       provide: LifecycleReconciler,
@@ -389,9 +452,17 @@ export const INTERNAL_CALLERS: readonly string[] = []
         store: EncounterAdminStore,
         clock: ClockPort,
         brackets: Brackets,
+        acceptance: MatchAcceptance,
       ): EncounterAdministration =>
-        new EncounterAdministration(repository, source, combat, commands, store, clock, (id) =>
-          brackets.view(id),
+        new EncounterAdministration(
+          repository,
+          source,
+          combat,
+          commands,
+          store,
+          clock,
+          (id) => brackets.view(id),
+          (id, encounterId) => acceptance.guard(id, encounterId),
         ),
       inject: [
         TOURNAMENT_ENCOUNTER_REPOSITORY,
@@ -401,6 +472,7 @@ export const INTERNAL_CALLERS: readonly string[] = []
         ENCOUNTER_ADMIN_STORE,
         CLOCK,
         BRACKETS,
+        MATCH_ACCEPTANCE,
       ],
     },
     {

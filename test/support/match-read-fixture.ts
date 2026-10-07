@@ -37,7 +37,15 @@ export const storedFixture = (e: MatchRead, bracket: PublishedBracket): Tourname
   logComplete: e.logComplete,
   bracketMetadata: {
     bracketTrack: e.track!,
-    registeredTeams: e.teams.map((t) => bracket.seeds.find((s) => s.teamId === t.teamId)!),
+    registeredTeams: e.teams.map((t) => {
+      const seed = bracket.seeds.find((s) => s.teamId === t.teamId)!
+      return {
+        teamId: seed.teamId,
+        name: seed.name,
+        avatar: seed.avatar,
+        memberIds: seed.memberIds,
+      }
+    }),
     preparationStatus: e.status === 'FINISHED' ? 'FINISHED' : 'IN_BATTLE',
     engineLastSeq: e.engineLastSeq,
     syncedAt: '2026-10-12T12:10:00.000Z',

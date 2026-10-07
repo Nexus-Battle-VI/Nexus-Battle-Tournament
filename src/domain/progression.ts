@@ -3,6 +3,7 @@ import type { MatchRead } from './match-read'
 import { requireTerminal } from './match-read'
 import { sameJson } from './json'
 import { requireRule } from './registration'
+import type { TournamentResolution } from './match-acceptance'
 
 export interface ConfirmedMatchResult {
   matchId: BracketMatch['id']
@@ -10,6 +11,7 @@ export interface ConfirmedMatchResult {
   roomId: string | null
   resolutionId?: string
   source?: 'COMBAT' | 'TOURNAMENT'
+  tournamentResolution?: TournamentResolution
   teamIds: [string, string]
   winnerTeamId: string | null
   loserTeamId: string | null
@@ -17,6 +19,7 @@ export interface ConfirmedMatchResult {
   confirmedAt: string
 }
 export interface Champion {
+  finalResolutionId?: string
   teamId: string
   teamName: string
   memberIds: string[]
@@ -154,10 +157,12 @@ export const confirmMatch = (
 export const declareChampion = (
   bracket: PublishedBracket,
   results: ConfirmedMatchResult[],
-  e: MatchRead,
+  e: MatchRead | null,
   at: string,
 ): Champion | null => {
-  const final = results.find((r) => r.encounterId === e.encounterId && r.matchId === 'Final')
+  const final = results.find(
+    (r) => r.matchId === 'Final' && (e === null || r.encounterId === e.encounterId),
+  )
   if (final?.winnerTeamId === undefined || final.winnerTeamId === null) return null
   requireRule(
     bracket.matches.every((m) =>
@@ -168,20 +173,67 @@ export const declareChampion = (
     409,
   )
   const seed = bracket.seeds.find((s) => s.teamId === final.winnerTeamId)
-  const roster = e.teams.find((t) => t.teamId === final.winnerTeamId)
+  const roster = e?.teams.find((t) => t.teamId === final.winnerTeamId)
   requireRule(
-    seed !== undefined && roster !== undefined,
+    seed !== undefined && (final.source === 'TOURNAMENT' || roster !== undefined),
     'RESULT_INCOMPATIBLE',
     'Falta el roster del campeón.',
     409,
   )
   return {
+    ...(final.resolutionId === undefined ? {} : { finalResolutionId: final.resolutionId }),
     teamId: seed.teamId,
     teamName: seed.name,
     memberIds: structuredClone(seed.memberIds),
-    heroes: structuredClone([...roster.participants]),
-    finalEncounterId: e.encounterId,
+    heroes: structuredClone([...(roster?.participants ?? [])]),
+    finalEncounterId: final.encounterId,
     finalRoomId: final.roomId,
     declaredAt: at,
   }
+}
+/** Solo resoluciones recuperadas del almacén autoritativo; nunca un request de ganador. */
+export const confirmTournamentResolution = (
+  bracket: PublishedBracket,
+  results: ConfirmedMatchResult[],
+  resolution: TournamentResolution,
+): ConfirmedMatchResult => {
+  const match = projectBracket(bracket, results).matches.find(
+    (m) => m.encounterId === resolution.encounterId,
+  )
+  requireRule(
+    match !== undefined &&
+      bracket.tournamentId === resolution.tournamentId &&
+      sameJson(match.teamIds, resolution.teamIds) &&
+      match.teamIds.includes(resolution.winnerTeamId) &&
+      match.teamIds.includes(resolution.loserTeamId) &&
+      resolution.winnerTeamId !== resolution.loserTeamId,
+    'RESULT_INCOMPATIBLE',
+    'La resolución no corresponde al avance de esta justa.',
+    409,
+  )
+  const confirmed: ConfirmedMatchResult = {
+    matchId: match.id,
+    encounterId: resolution.encounterId,
+    roomId: null,
+    source: 'TOURNAMENT',
+    resolutionId: resolution.resolutionId,
+    teamIds: resolution.teamIds,
+    winnerTeamId: resolution.winnerTeamId,
+    loserTeamId: resolution.loserTeamId,
+    result: null,
+    tournamentResolution: structuredClone(resolution),
+    confirmedAt: resolution.resolvedAt,
+  }
+  const previous = results.find((r) => r.encounterId === resolution.encounterId)
+  if (previous !== undefined) {
+    requireRule(
+      sameJson(previous, confirmed),
+      'RESULT_INCOMPATIBLE',
+      'No se puede reescribir una resolución confirmada.',
+      409,
+    )
+    return previous
+  }
+  results.push(confirmed)
+  return confirmed
 }

@@ -8,6 +8,11 @@ import type {
 } from '../../../domain/registration'
 import type { PublishedBracket } from '../../../domain/bracket'
 import type { TournamentLifecycle } from '../../../application/ports/LifecyclePorts'
+import type {
+  RoundWindow,
+  MatchAcceptanceState,
+  TournamentResolution,
+} from '../../../domain/match-acceptance'
 import type { EncounterBracketMetadata } from '../../../domain/entities/TournamentEncounter'
 
 import type { TournamentEncounterTeam } from '../../../domain/entities/TournamentEncounter'
@@ -95,6 +100,33 @@ export interface TournamentCombatEventTable {
 }
 
 export interface Database {
+  tournament_match_acceptance: {
+    tournament_id: string
+    encounter_id: string
+    data: ColumnType<MatchAcceptanceState, string, string>
+  }
+  tournament_acceptances: {
+    tournament_id: string
+    encounter_id: string
+    subject: string
+    team_id: string
+    receipt_id: string
+    operation_id: string
+    accepted_at: ColumnType<Date, Date, never>
+  }
+  tournament_acceptance_operations: {
+    tournament_id: string
+    operation_id: string
+    encounter_id: string
+    subject: string
+    receipt_id: string
+  }
+  tournament_resolutions: {
+    tournament_id: string
+    encounter_id: string
+    resolution_id: string
+    data: ColumnType<TournamentResolution, string, never>
+  }
   tournament_lifecycle: {
     tournament_id: string
     data: ColumnType<TournamentLifecycle, string, string>
@@ -119,6 +151,12 @@ export interface TournamentEncounterActionTable {
   readonly occurred_at: ColumnType<Date, Date, never>
 }
 export interface RegistrationTournamentTable {
+  acceptance_policy: ColumnType<
+    'ROUND_ACCEPTANCE_V1' | null,
+    'ROUND_ACCEPTANCE_V1' | null | undefined,
+    never
+  >
+  round_windows: ColumnType<RoundWindow[], string | undefined, never>
   tournament_mode: ColumnType<TournamentMode, TournamentMode | undefined, never>
   team_size: ColumnType<TeamSize, TeamSize | undefined, never>
   contract_version: ColumnType<string, string | undefined, never>

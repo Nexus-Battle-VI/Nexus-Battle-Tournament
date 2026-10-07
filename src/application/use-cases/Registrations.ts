@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { roundWindows, ACCEPTANCE_POLICY } from '../../domain/match-acceptance'
 import {
   RegistrationError,
   memberOf,
@@ -187,6 +188,8 @@ export class Registrations {
     const t = await this.repository.create(
       {
         id: randomUUID(),
+        acceptancePolicy: command.tournamentMode === undefined ? null : ACCEPTANCE_POLICY,
+        roundWindows: command.tournamentMode === undefined ? [] : roundWindows(startsAt),
         tournamentMode: command.tournamentMode ?? 'DUO',
         teamSize: modeSize(command.tournamentMode ?? 'DUO'),
         contractVersion:

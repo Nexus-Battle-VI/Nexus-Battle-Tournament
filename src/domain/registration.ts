@@ -1,4 +1,5 @@
 import type { PublishedBracket } from './bracket'
+import type { RoundWindow, ACCEPTANCE_POLICY } from './match-acceptance'
 
 export const CONTRACT_VERSION = 'torneos-hu77-84-78-hu83-v2.0.0'
 export const MODALITIES_CONTRACT_VERSION = 'torneos-v3.0.0'
@@ -110,6 +111,8 @@ export interface RegistrationOperation {
   }
 }
 export interface RegistrationTournament {
+  acceptancePolicy?: typeof ACCEPTANCE_POLICY | null
+  roundWindows?: RoundWindow[]
   tournamentMode?: TournamentMode
   teamSize?: TeamSize
   contractVersion?: string
@@ -278,6 +281,9 @@ export const entryFeeProjection = (policy: EntryPolicy): number | null =>
     ? 0
     : (policy.methods.find((m): m is CreditMethod => m.method === 'CREDITS')?.amount ?? null)
 export const publicTournament = (t: RegistrationTournament, now: Date) => ({
+  acceptancePolicy: t.acceptancePolicy ?? null,
+  roundSchedule: t.roundWindows ?? [],
+  serverNow: now.toISOString(),
   contractVersion: t.contractVersion ?? CONTRACT_VERSION,
   tournamentMode: t.tournamentMode ?? 'DUO',
   teamSize: t.teamSize ?? 2,
@@ -297,7 +303,7 @@ export const publicTeam = (tournamentId: string, team: RegistrationTeam) => ({
   name: team.name,
   avatar: team.avatar,
   ownerId: team.ownerId,
-  companionId: team.companionId,
+  companionId: teamMemberIds(team)[1] ?? null,
   members: teamMembers(team),
   status: team.status,
   createdAt: team.createdAt,

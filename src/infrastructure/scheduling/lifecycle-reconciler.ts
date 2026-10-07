@@ -3,20 +3,20 @@ import type { Prizes } from '../../application/use-cases/Prizes'
 /** Avance desde el archivo oficial y recuperación de derechos durables, sin navegador. */
 export class LifecycleReconciler {
   private timer: ReturnType<typeof setInterval> | undefined
-  private running = false
+  private running: Promise<void> | null = null
   constructor(
     private readonly progress: Progressions,
     private readonly prizes: Prizes,
   ) {}
   async sweep(): Promise<void> {
-    if (this.running) return
-    this.running = true
-    try {
+    if (this.running !== null) return this.running
+    this.running = (async () => {
       await this.progress.reconcile()
       await this.prizes.reconcile()
-    } finally {
-      this.running = false
-    }
+    })().finally(() => {
+      this.running = null
+    })
+    return this.running
   }
   onModuleInit(): void {
     const run = () => {
@@ -26,7 +26,8 @@ export class LifecycleReconciler {
     this.timer.unref()
     run()
   }
-  onModuleDestroy(): void {
+  async onModuleDestroy(): Promise<void> {
     clearInterval(this.timer)
+    await this.running
   }
 }

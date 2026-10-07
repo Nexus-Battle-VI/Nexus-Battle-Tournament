@@ -19,12 +19,14 @@ export interface PrizeGrant {
   finalEncounterId: string
   finalRoomId: string | null
   playerId: string
-  heroId: string
+  heroId: string | null
   kind: 'CREDITS' | 'EPIC'
   amount: string | null
   productId: string | null
 }
 export interface PrizeLine extends PrizeGrant {
+  finalResolutionId?: string
+  responsible?: 'PRIZE_OPERATIONS' | null
   status: 'PENDING' | 'DELIVERED'
   receiptId: string | null
   deliveredAt: string | null
@@ -111,12 +113,6 @@ export const createPrizeDelivery = (
       409,
     )
     const hero = champion.heroes.find((h) => h.playerId === playerId)
-    requireRule(
-      hero !== undefined,
-      'INVALID_PRIZE_RECIPIENT',
-      'Falta el héroe del campeón en la final.',
-      409,
-    )
     for (const kind of ['CREDITS', 'EPIC'] as const) {
       if (kind === 'EPIC' && a.epicProductId === null) continue
       lines.push({
@@ -125,32 +121,50 @@ export const createPrizeDelivery = (
         championTeamId: champion.teamId,
         finalEncounterId: champion.finalEncounterId,
         finalRoomId: champion.finalRoomId,
+        ...(champion.finalResolutionId === undefined
+          ? {}
+          : { finalResolutionId: champion.finalResolutionId }),
         playerId,
-        heroId: hero.heroId,
+        heroId: hero?.heroId ?? null,
         kind,
         amount: kind === 'CREDITS' ? a.credits : null,
         productId: kind === 'EPIC' ? a.epicProductId : null,
         status: 'PENDING',
         receiptId: null,
         deliveredAt: null,
-        lastError: null,
+        lastError: hero === undefined ? 'PRIZE_RECIPIENT_REQUIRED' : null,
+        responsible: hero === undefined ? 'PRIZE_OPERATIONS' : null,
       })
     }
   }
   return { requestedAt: at, requestedBy: actor, lines }
 }
-export const grantCommand = (line: PrizeLine): PrizeGrant => ({
-  operationId: line.operationId,
-  tournamentId: line.tournamentId,
-  championTeamId: line.championTeamId,
-  finalEncounterId: line.finalEncounterId,
-  finalRoomId: line.finalRoomId,
-  playerId: line.playerId,
-  heroId: line.heroId,
-  kind: line.kind,
-  amount: line.amount,
-  productId: line.productId,
-})
+export const grantCommand = (line: PrizeLine): PrizeGrant => {
+  requireRule(
+    line.heroId !== null,
+    'PRIZE_RECIPIENT_REQUIRED',
+    'Falta un héroe receptor autoritativo; el derecho sigue pendiente.',
+    409,
+  )
+  requireRule(
+    line.finalRoomId !== null,
+    'PRIZE_RESOLUTION_CONTRACT_REQUIRED',
+    'Wallet/Inventory requieren ampliar su contrato para una final sin sala.',
+    503,
+  )
+  return {
+    operationId: line.operationId,
+    tournamentId: line.tournamentId,
+    championTeamId: line.championTeamId,
+    finalEncounterId: line.finalEncounterId,
+    finalRoomId: line.finalRoomId,
+    playerId: line.playerId,
+    heroId: line.heroId,
+    kind: line.kind,
+    amount: line.amount,
+    productId: line.productId,
+  }
+}
 export const validatePrizeReceipt = (command: PrizeGrant, raw: unknown): string => {
   const r = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   requireRule(

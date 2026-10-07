@@ -23,13 +23,57 @@ export class HttpCombatRoomCommandAdapter implements CombatRoomCommandPort {
   ) {}
 
   async createRoom(input: CreateCombatRoomInput): Promise<{ readonly roomId: string }> {
-    const data = await this.post(ROOMS, input)
+    const body =
+      input.tournamentMode === undefined
+        ? input
+        : {
+            operationId: input.operationId,
+            tournamentId: input.tournamentId,
+            encounterId: input.encounterId,
+            mode: input.tournamentMode,
+            teamSize: input.teamSize,
+            teams: input.teams,
+          }
+    const data = await this.post(ROOMS, body)
     requireRule(
       record(data) && typeof data.id === 'string' && data.id.length > 0,
       'SERVICE_UNAVAILABLE',
       'Combat devolvió una sala incompatible.',
       503,
     )
+    if (input.tournamentMode !== undefined) {
+      requireRule(
+        Array.isArray(data.teams) &&
+          data.teams.length === 2 &&
+          record(data.tournament) &&
+          data.tournament.mode === input.tournamentMode &&
+          data.tournament.teamSize === input.teamSize,
+        'SERVICE_UNAVAILABLE',
+        'Combat devolvió una modalidad o roster incompatible.',
+        503,
+      )
+      for (const [side, expected] of input.teams.entries()) {
+        const team: unknown = data.teams[side]
+        requireRule(
+          record(team) &&
+            team.label === expected.teamId &&
+            team.capacity === input.teamSize &&
+            Array.isArray(team.participants) &&
+            team.participants.length === expected.memberIds.length &&
+            team.participants.every(
+              (p: unknown, i: number) =>
+                record(p) &&
+                p.kind === 'HUMAN' &&
+                p.playerId === expected.memberIds[i] &&
+                typeof p.heroId === 'string' &&
+                p.heroId.length > 0,
+            ),
+          'SERVICE_UNAVAILABLE',
+          'Combat devolvió participantes ajenos al roster.',
+          503,
+        )
+      }
+    }
     return { roomId: data.id }
   }
 

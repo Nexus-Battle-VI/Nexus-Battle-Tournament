@@ -1,6 +1,6 @@
 import type { TournamentPrizeDestination } from '../../../application/ports/LifecyclePorts'
 import type { PrizeGrant } from '../../../domain/prize'
-import { RegistrationError } from '../../../domain/registration'
+import { RegistrationError, requireRule } from '../../../domain/registration'
 import { signInternalRequest } from '../identity/internal-signature'
 export class TournamentPrizeClient implements TournamentPrizeDestination {
   constructor(
@@ -9,6 +9,18 @@ export class TournamentPrizeClient implements TournamentPrizeDestination {
     private readonly secret: string | null,
   ) {}
   async grant(command: PrizeGrant): Promise<unknown> {
+    requireRule(
+      command.finalRoomId !== null,
+      'PRIZE_RESOLUTION_CONTRACT_REQUIRED',
+      'El contrato de premios vigente requiere una sala final.',
+      503,
+    )
+    requireRule(
+      command.heroId !== null,
+      'PRIZE_RECIPIENT_REQUIRED',
+      'Falta un héroe receptor validado.',
+      409,
+    )
     const base = command.kind === 'CREDITS' ? this.walletUrl : this.inventoryUrl
     const path =
       command.kind === 'CREDITS'

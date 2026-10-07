@@ -60,6 +60,8 @@ export class PostgresRegistrationRepository implements RegistrationRepository {
         .insertInto('tournaments')
         .values({
           id: t.id,
+          acceptance_policy: t.acceptancePolicy ?? null,
+          round_windows: JSON.stringify(t.roundWindows ?? []),
           tournament_mode: t.tournamentMode ?? 'DUO',
           team_size: t.teamSize ?? 2,
           contract_version: t.contractVersion ?? 'torneos-hu77-84-78-hu83-v2.0.0',
@@ -102,6 +104,8 @@ export class PostgresRegistrationRepository implements RegistrationRepository {
       .execute()
     return {
       id,
+      acceptancePolicy: t.acceptance_policy,
+      roundWindows: t.round_windows,
       tournamentMode: t.tournament_mode,
       teamSize: t.team_size,
       contractVersion: t.contract_version,

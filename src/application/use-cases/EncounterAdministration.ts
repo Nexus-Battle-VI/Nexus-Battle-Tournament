@@ -21,6 +21,7 @@ export interface EncounterAdminReceipt {
   readonly encounterId: string
   readonly action: EncounterAdminAction
   readonly actor: string
+  readonly actorType: 'WORKER' | 'ADMINISTRATOR'
   readonly operationId: string
   readonly occurredAt: string
   readonly replayed: boolean
@@ -59,6 +60,7 @@ export class EncounterAdministration {
     private readonly store: EncounterAdminStore,
     private readonly clock: ClockPort,
     private readonly viewBracket: (tournamentId: string) => Promise<PublishedBracket | null>,
+    private readonly acceptanceGuard?: (tournamentId: string, encounterId: string) => Promise<void>,
   ) {
     this.seeder = new EnsureTournamentMatchesSeeded(encounters, source, record)
     this.projector = new ProjectCombatRecord(encounters, record)
@@ -91,6 +93,16 @@ export class EncounterAdministration {
   ): Promise<EncounterAdminReceipt> {
     validateOperation(operationId)
     return this.exclusive(`${tournamentId}|${encounterId}`, async () => {
+      const guarded = await this.encounters.findOne(tournamentId, encounterId)
+      if (guarded?.bracketMetadata?.acceptancePolicy === 'ROUND_ACCEPTANCE_V1') {
+        requireRule(
+          this.acceptanceGuard !== undefined,
+          'ACCEPTANCE_REQUIRED',
+          'Falta validar el cierre de aceptación.',
+          409,
+        )
+        await this.acceptanceGuard(tournamentId, encounterId)
+      }
       const byOperation = await this.store.findByOperation(tournamentId, operationId)
       if (byOperation !== null) {
         requireRule(
@@ -106,6 +118,18 @@ export class EncounterAdministration {
         )
       }
       const encounter = await this.load(tournamentId, encounterId)
+      if (
+        guarded === null &&
+        encounter.bracketMetadata?.acceptancePolicy === 'ROUND_ACCEPTANCE_V1'
+      ) {
+        requireRule(
+          this.acceptanceGuard !== undefined,
+          'ACCEPTANCE_REQUIRED',
+          'Falta validar el cierre de aceptación.',
+          409,
+        )
+        await this.acceptanceGuard(tournamentId, encounterId)
+      }
       const done = await this.store.findByAction(tournamentId, encounterId, action)
       if (done !== null) return this.receipt(done, encounter, true)
       const created =
@@ -239,6 +263,7 @@ export class EncounterAdministration {
       encounterId: item.encounterId,
       action: item.action,
       actor: item.actor,
+      actorType: item.actor === 'tournament-worker' ? 'WORKER' : 'ADMINISTRATOR',
       operationId: item.operationId,
       occurredAt: item.occurredAt.toISOString(),
       replayed,

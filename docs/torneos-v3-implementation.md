@@ -17,7 +17,8 @@ Un valor inválido, incluido null, se rechaza; nunca selecciona otra modalidad.
 El owner se agrega desde JWT en posición cero. SOLO envía un arreglo vacío.
 El DTO antiguo `companionId` se conserva exclusivamente para DUO. Mezclar ambos
 campos es inválido. La respuesta contiene `members` con sujeto, posición y
-consentimiento individual; `companionId` es alias v2 en DUO y null en SOLO/TRIO.
+consentimiento individual; el campo público `companionId` es alias del segundo
+integrante cuando existe. En TRIO, `members` define el roster completo.
 
 Todos los miembros consienten y son elegibles antes de confirmar el cupo.
 No hay edición de roster: cancelar/rechazar una intención permite registrar otra.
@@ -51,6 +52,9 @@ La proyección de estadísticas cuenta resultados estables, sin incrementos en r
 001–004 publicados se conservan byte a byte, incluida 004-tournament-admin-actions.
 005 queda reservado para la integración separada de enlaces externos; no se porta
 la migración local 004-tournament-external-links ni se registra con otro significado.
+Si 006 ya fue aplicada, una futura migración de enlaces debe utilizar un ordinal
+posterior libre. No se permite insertar 005 en un historial aplicado ni habilitar
+migraciones fuera de orden para ocultar la colisión.
 006-tournament-mode-members-progression agrega modalidad/tamaño, migra miembros DUO,
 reemplaza funciones de validación mediante una migración nueva e integra lifecycle.
 Las restricciones diferidas validan roster/consentimientos en el motor. La PK de
@@ -58,11 +62,69 @@ registration_members mantiene unicidad humana por torneo; la reserva del último
 cupo sigue en la transacción de inscripción y no abarca llamadas de red.
 
 Wallet/Inventory preparados exigen diez campos canónicos y `finalRoomId` string.
-Una final por ausencia necesitará ampliar esos consumidores para una resolución
-Tournament sin sala. Este repositorio no inventará una sala ni marcará entregas
-completas mientras ese contrato esté pendiente. Se informó al Chat A.
-La versión local propuesta `torneos-v3.0.0` debe reconciliarse con su contrato común
-en Infrastructure antes de integrar PR. Solo Tournament se modifica en este chat.
+Una final por ausencia conserva derechos PENDING y operaciones estables: requiere
+ampliar esos consumidores para una resolución Tournament sin sala. El código
+`PRIZE_RESOLUTION_CONTRACT_REQUIRED` evita despachar comandos v1 inválidos.
+Además Inventory preparado reserva `/api/internal/v1/players/:id/equipped-hero`
+a commerce/notifications/combat y no autoriza Tournament. La composición deja
+`PRIZE_RECIPIENT_CONTRACT_REQUIRED` con responsable PRIZE_OPERATIONS; el puerto
+admite una futura fuente autorizada. Un héroe ausente/inelegible conserva el
+derecho pendiente. En una final jugada se conservan los héroes del archivo oficial.
+Se informó a A sobre ambas dependencias. Solo Tournament se modifica en este chat.
+
+## Calendario, aceptación y decisiones HU-85
+
+Los torneos nuevos con modalidad explícita guardan ROUND_ACCEPTANCE_V1 y seis
+ventanas UTC de 120 segundos, separadas por diez minutos. El DTO y snapshot
+exponen `roundSchedule`; el almacenamiento usa `round_windows`. La configuración
+y el snapshot no se editan. Los torneos anteriores sin política mantienen C13.
+
+`POST /api/v1/tournaments/:id/matches/:encounterId/acceptance` acepta exclusivamente
+operationId. El JWT identifica al jugador y la pertenencia se comprueba antes de
+revelar un recibo. El servidor exige apertura <= ahora < cierre. Cada sujeto tiene
+un recibo único con fecha/deadline; aliases de operación y replays son durables.
+Inscribirse/consentir, aceptar la justa y ser elegible para Combat son controles distintos.
+
+007-tournament-round-acceptance-resolution agrega calendario, aceptaciones,
+operaciones y resoluciones. Una transacción por justa serializa aceptación/cierre;
+las PK y guards impiden modificar recibos, decisiones, roster o sorteos. Las llamadas
+HTTP ocurren después de guardar intención y lease, fuera de SQL. Dos workers reclaman
+la misma intención por justa; E1/E2 pueden continuar en paralelo. Los identificadores
+internos son `tournament:${encounterId}:prepare` y `:start`, en worker y recuperación admin.
+El actor técnico `tournament-worker` queda en la auditoría con actorType WORKER.
+
+El reconciliador observa cada segundo. Como medida conservadora de disponibilidad,
+un cierre incompleto sin observación durable durante los últimos diez segundos produce
+WINDOW_INTERRUPTED: mantiene aceptaciones, pero no infiere ganador ni reabre la
+ventana. Un reinicio dentro de una ventana OPEN no impide aceptar antes del deadline;
+ambos equipos completos conservan su derecho a combatir al cierre, incluso tras una
+pausa del worker. GET muestra CLOSED al deadline aunque aún falte la decisión durable.
+Una ventana íntegra sin activar produce WINDOW_MISSED. Si los resultados
+previos no estaban confirmados a la apertura, PREVIOUS_RESULT_PENDING. La recuperación
+de estas incidencias necesita revisión operativa/política; no se reprograma implícitamente.
+Las pruebas de reloj representan ticks de un worker sano y separan los casos de caída.
+
+Al cierre ambos completos crean intención de Combat; un solo completo gana por ausencia;
+dos incompletos usan el conteo mayor o un bit de `node:crypto.randomInt(2)` si empatan.
+El bit y resolución se guardan una sola vez. La identidad del sorteo es resolutionId.
+Un error/422/timeout de Combat mantiene la intención pendiente, sala y operaciones;
+no adjudica derrota. `scheduledStartAt` y `startedAt` real siguen separados.
+
+La única lectura `/matches` conserva HU-83 y añade la extensión del contrato común:
+acceptanceStatus, operationalStatus, acceptedCounts, myAcceptance, blockReason,
+resolution, sources y destinations. No expone recibos individuales de otros actores.
+ABSENCE no contiene sala, BattleResult, héroes ni eventos; `result` continúa null.
+PLAYED deriva del archivo validado; NO_WINNER mantiene RESOLUTION_REQUIRED.
+La final por ausencia declara campeón desde seeds y genera derechos una sola vez.
+
+## Wire reconciliado
+
+Se implementa revisión documental 2 de torneos-v3.0.0 (Infrastructure 043db7c).
+El adaptador traduce tournamentMode a mode y envía teamSize, con HMAC caller tournament.
+El cuerpo DUO histórico permanece intacto. El lector usa la configuración v3 de Combat
+para exigir 1/2/3 participantes por lado; también valida los miembros contra HU-83.
+Combat ejercitado desde el checkout de C, 317726d (base dd67d47); su versión numérica
+interna es distinta de la versión pública de Tournament.
 
 ## Evidencia y límites
 
@@ -70,5 +132,9 @@ El typecheck de la base limpia pasó antes de editar. Las suites usan Account,
 JWT y gateways de pago controlados; no acreditan personas reales ni movimientos
 financieros reales. PostgreSQL de pruebas es un motor real 18.4 aislado. La suite
 también conserva compatibilidad con PostgreSQL 17 de Testcontainers/CI.
-Los controles finales y sus SHA se registran en el estado del Chat B; un test
-skipped permanece pendiente y no cuenta como integración real de Combat.
+Los controles finales y SHA se registran en `estado/chat-B.json` del plan compartido.
+La suite `real-combat-modes.spec.ts` ejercita HTTP Nest, PostgreSQL real, HMAC y motor
+Combat real para las tres modalidades; TRIO tiene seis participantes y E1/E2 concurrentes.
+Account/Inventory y el verificador JWT son dobles explícitos; Combat usa memoria en
+este recorrido. La persistencia Mongo de Combat corresponde a la evidencia de C.
+No se afirman cuentas reales, entregas reales de premio, aceptación del PO ni despliegue.

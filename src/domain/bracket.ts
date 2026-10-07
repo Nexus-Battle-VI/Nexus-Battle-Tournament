@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { RoundWindow, ACCEPTANCE_POLICY } from './match-acceptance'
 import {
   CONTRACT_VERSION,
   requireRule,
@@ -37,6 +38,8 @@ export interface BracketMatch {
   destinations: { winner: Destination | null; loser: Destination | null }
 }
 export interface PublishedBracket {
+  acceptancePolicy?: typeof ACCEPTANCE_POLICY | null
+  roundSchedule?: RoundWindow[]
   version: 2 | 3
   tournamentMode?: TournamentMode
   teamSize?: TeamSize
@@ -138,6 +141,9 @@ export const generateBracket = (
         }
     }
   return {
+    ...(t.acceptancePolicy === undefined || t.acceptancePolicy === null
+      ? {}
+      : { acceptancePolicy: t.acceptancePolicy, roundSchedule: t.roundWindows }),
     version: t.contractVersion === MODALITIES_CONTRACT_VERSION ? 3 : 2,
     contractVersion: t.contractVersion ?? CONTRACT_VERSION,
     ...(t.contractVersion === MODALITIES_CONTRACT_VERSION
@@ -168,6 +174,9 @@ export const bracketEncounters = (bracket: PublishedBracket): TournamentEncounte
     lastSyncedSeq: 0,
     logComplete: false,
     bracketMetadata: {
+      ...(bracket.acceptancePolicy === undefined || bracket.acceptancePolicy === null
+        ? {}
+        : { acceptancePolicy: bracket.acceptancePolicy }),
       ...(bracket.version === 3
         ? { tournamentMode: bracket.tournamentMode, teamSize: bracket.teamSize }
         : {}),

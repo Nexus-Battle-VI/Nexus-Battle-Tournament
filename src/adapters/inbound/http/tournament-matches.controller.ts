@@ -1,4 +1,4 @@
-import { Controller, Get, Inject, NotFoundException, Param, Query } from '@nestjs/common'
+import { Controller, Get, Inject, NotFoundException, Optional, Param, Query } from '@nestjs/common'
 import { ApiOperation, ApiTags } from '@nestjs/swagger'
 
 import { TournamentMatchNotFoundError } from '../../../domain/errors/TournamentMatchNotFoundError'
@@ -12,6 +12,13 @@ import {
   type MatchSummaryResponse,
 } from './dto/tournament-match.dto'
 import { GET_TOURNAMENT_MATCH_DETAIL, LIST_TOURNAMENT_MATCHES } from './tokens.tournament-matches'
+import {
+  MATCH_ACCEPTANCE,
+  type MatchAcceptance,
+} from '../../../application/use-cases/MatchAcceptance'
+import { CurrentIdentity } from './auth/decorators'
+import type { VerifiedIdentity } from '../../../application/ports/TokenVerifierPort'
+import type { TournamentEncounter } from '../../../domain/entities/TournamentEncounter'
 
 /**
  * HU-83 (Management#465): registro y consulta de las justas de un torneo.
@@ -27,16 +34,20 @@ export class TournamentMatchesController {
   constructor(
     @Inject(LIST_TOURNAMENT_MATCHES) private readonly listMatches: ListTournamentMatches,
     @Inject(GET_TOURNAMENT_MATCH_DETAIL) private readonly matchDetail: GetTournamentMatchDetail,
+    @Optional() @Inject(MATCH_ACCEPTANCE) private readonly acceptance?: MatchAcceptance,
   ) {}
 
   @Get(':tournamentId/matches')
   @ApiOperation({ summary: 'Lista las justas de un torneo con su estado (CA-02)' })
   async list(
     @Param('tournamentId') tournamentId: string,
+    @CurrentIdentity() actor?: VerifiedIdentity,
   ): Promise<readonly MatchSummaryResponse[]> {
     const encounters = await this.listMatches.execute(tournamentId)
 
-    return encounters.map(toMatchSummaryResponse)
+    return Promise.all(
+      encounters.map(async (e) => this.enrich(e, toMatchSummaryResponse(e), actor?.subject)),
+    )
   }
 
   @Get(':tournamentId/matches/:matchId')
@@ -48,13 +59,18 @@ export class TournamentMatchesController {
     @Param('tournamentId') tournamentId: string,
     @Param('matchId') matchId: string,
     @Query() query: MatchDetailQueryDto,
+    @CurrentIdentity() actor?: VerifiedIdentity,
   ): Promise<MatchDetailResponse> {
     const afterSeq = query.afterSeq ?? 0
 
     try {
       const { encounter, events } = await this.matchDetail.execute(tournamentId, matchId, afterSeq)
 
-      return toMatchDetailResponse(encounter, events, afterSeq)
+      return await this.enrich(
+        encounter,
+        toMatchDetailResponse(encounter, events, afterSeq),
+        actor?.subject,
+      )
     } catch (error) {
       if (error instanceof TournamentMatchNotFoundError) {
         // Referencia inexistente o de otro torneo: 404 sin exponer el registro
@@ -63,6 +79,29 @@ export class TournamentMatchesController {
       }
 
       throw error
+    }
+  }
+  private async enrich<T extends MatchSummaryResponse>(
+    e: TournamentEncounter,
+    response: T,
+    subject?: string,
+  ): Promise<T> {
+    if (
+      e.bracketMetadata?.acceptancePolicy !== 'ROUND_ACCEPTANCE_V1' ||
+      this.acceptance === undefined
+    )
+      return response
+    const projection = await this.acceptance.view(e.tournamentId, e.encounterId, subject)
+    if (projection === null) return response
+    return {
+      ...response,
+      ...projection,
+      ...(e.status === 'FINISHED' && projection.resolution === null
+        ? { operationalStatus: 'RESOLUTION_PENDING' }
+        : {}),
+      ...(projection.resolution?.resultType === 'ABSENCE'
+        ? { status: 'FINISHED', closedAt: projection.resolution.resolvedAt }
+        : {}),
     }
   }
 }
