@@ -190,6 +190,7 @@ describe('Combinación HU-77/84/78/83 en PostgreSQL real aislado', () => {
       '002-tournament-registration',
       '003-tournament-bracket',
       '004-tournament-admin-actions',
+      '005-tournament-absences',
     ])
     expect(await archive.findOne(original.tournamentId, original.encounterId)).toEqual(original)
     const f = fixture(new PostgresRegistrationRepository(db))
@@ -214,6 +215,7 @@ describe('Combinación HU-77/84/78/83 en PostgreSQL real aislado', () => {
       '002-tournament-registration',
       '003-tournament-bracket',
       '004-tournament-admin-actions',
+      '005-tournament-absences',
     ])
   })
   it('conserva registro/consentimientos/recibos al reconstruir adaptadores', async () => {

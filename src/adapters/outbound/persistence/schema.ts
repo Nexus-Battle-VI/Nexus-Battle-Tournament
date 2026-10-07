@@ -100,6 +100,22 @@ export interface Database {
   tournament_encounters: TournamentEncounterTable
   tournament_combat_events: TournamentCombatEventTable
   tournament_encounter_actions: TournamentEncounterActionTable
+  tournament_encounter_readiness: TournamentEncounterReadinessTable
+  tournament_encounter_absences: TournamentEncounterAbsenceTable
+}
+export interface TournamentEncounterReadinessTable {
+  readonly tournament_id: string
+  readonly encounter_id: string
+  readonly player_id: string
+  readonly accepted_at: ColumnType<Date, Date, never>
+}
+export interface TournamentEncounterAbsenceTable {
+  readonly tournament_id: string
+  readonly encounter_id: string
+  readonly winner_team_id: string
+  readonly kind: 'ONE_TEAM_READY' | 'MORE_PLAYERS_READY' | 'DRAW'
+  readonly ready_counts: ColumnType<unknown, string, never>
+  readonly resolved_at: ColumnType<Date, Date, never>
 }
 export interface TournamentEncounterActionTable {
   readonly action_id: string

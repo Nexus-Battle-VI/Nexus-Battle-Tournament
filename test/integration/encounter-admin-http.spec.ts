@@ -32,6 +32,7 @@ describe('HU-85: preparar e iniciar justas independientes', () => {
     COGNITO_USER_POOL_ID: 'us-east-1_controlado',
     COGNITO_CLIENT_ID: 'test-client',
     PERSISTENCE_DRIVER: 'memory',
+    ABSENCE_RESOLVER_ENABLED: 'false',
   }
   let previous: Record<string, string | undefined>
   beforeAll(() => {
@@ -300,27 +301,13 @@ describe('HU-85: preparar e iniciar justas independientes', () => {
     expect(combat.startedRooms).toBe(0)
   })
 
-  it('Regla de la HU: sin derrotas automáticas; ausencias, el paso del tiempo y los rechazos no fijan resultado ni ganador', async () => {
+  it('Iniciar o rechazar fuera de hora no fija resultado ni ganador: eso solo lo decide Combat o la ausencia resuelta', async () => {
     await act('E1', 'prepare', 'prep-e1')
-    // Un año después de la fecha del torneo nadie inició E1: no hay ausencia, derrota ni cierre automático.
+    // Mucho después de la hora del torneo: iniciar sigue siendo una acción del administrador.
     f.setNow('2027-12-31T00:00:00Z')
     const rejected = await act('E5', 'prepare', 'prep-e5')
     expect(rejected.status).toBe(409)
-    const all = await request(app.getHttpServer())
-      .get(`/api/v1/tournaments/${tid}/matches`)
-      .set('Authorization', 'Bearer p0')
-    expect(all.body).toHaveLength(14)
-    for (const match of all.body as { status: string; result?: unknown; closedAt: unknown }[]) {
-      expect(match.status).not.toBe('FINISHED')
-      expect(match.closedAt).toBeNull()
-    }
-    for (const label of ['E1', 'E5']) {
-      const info = await detail(label)
-      expect(info.body.result ?? null).toBeNull()
-      expect(info.body.closedAt).toBeNull()
-    }
-    expect((await detail('E1')).body.status).toBe('READY')
-    // Aun tarde, el administrador puede iniciar: iniciar no concluye nada ni asigna ganador.
+    expect((await detail('E5')).body.result ?? null).toBeNull()
     const started = await act('E1', 'start', 'start-e1')
     expect(started.body.status).toBe('IN_PROGRESS')
     const after = await detail('E1')

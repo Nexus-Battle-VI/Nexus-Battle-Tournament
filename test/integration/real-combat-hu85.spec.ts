@@ -209,7 +209,7 @@ suite('HU-85.4 contra Combat real (Account e Inventory son dobles de prueba)', (
     expect(record.status).toBe('IN_BATTLE')
   }, 60000)
 
-  it('C13 real: sin derrotas automáticas; un año después iniciar no fija resultado ni cierre', async () => {
+  it('C13 real: iniciar mucho después de la hora no fija resultado ni cierre (solo Combat o la ausencia resuelta los fijan)', async () => {
     await admin().prepare(tid, `${tid}:E1`, 'admin', 'prep-e1')
     f.setNow('2027-12-31T00:00:00Z')
     await expect(admin().prepare(tid, `${tid}:E5`, 'admin', 'prep-e5')).rejects.toMatchObject({

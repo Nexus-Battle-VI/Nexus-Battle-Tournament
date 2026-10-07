@@ -34,6 +34,15 @@ import {
   ENCOUNTER_ADMIN_STORE,
   type EncounterAdminStore,
 } from '../../application/ports/EncounterAdminPorts'
+import { EncounterReadinessController } from '../../adapters/inbound/http/encounter-readiness.controller'
+import {
+  ENCOUNTER_ABSENCES,
+  EncounterAbsences,
+} from '../../application/use-cases/EncounterAbsences'
+import { ABSENCE_STORE, type AbsenceStore } from '../../application/ports/AbsencePorts'
+import { InMemoryAbsenceStore } from '../../adapters/outbound/persistence/InMemoryAbsenceStore'
+import { PostgresAbsenceStore } from '../../adapters/outbound/persistence/PostgresAbsenceStore'
+import { AbsenceReconciler } from '../scheduling/absence-reconciler'
 import { HttpCombatRoomCommandAdapter } from '../../adapters/outbound/combat/HttpCombatRoomCommandAdapter'
 import { InMemoryEncounterAdminStore } from '../../adapters/outbound/persistence/InMemoryEncounterAdminStore'
 import { PostgresEncounterAdminStore } from '../../adapters/outbound/persistence/PostgresEncounterAdminStore'
@@ -94,6 +103,7 @@ export const INTERNAL_CALLERS: readonly string[] = []
     RegistrationsController,
     BracketsController,
     EncounterAdminController,
+    EncounterReadinessController,
   ],
   providers: [
     {
@@ -307,6 +317,39 @@ export const INTERNAL_CALLERS: readonly string[] = []
       useFactory: (db: Kysely<Database> | null): EncounterAdminStore =>
         db === null ? new InMemoryEncounterAdminStore() : new PostgresEncounterAdminStore(db),
       inject: [DATABASE],
+    },
+    // --- HU-85: ventana de aceptación y avance por ausencia -----------------
+    {
+      provide: ABSENCE_STORE,
+      useFactory: (db: Kysely<Database> | null): AbsenceStore =>
+        db === null ? new InMemoryAbsenceStore() : new PostgresAbsenceStore(db),
+      inject: [DATABASE],
+    },
+    {
+      provide: ENCOUNTER_ABSENCES,
+      useFactory: (
+        repository: TournamentEncounterRepositoryPort,
+        source: TournamentEncounterSourcePort,
+        combat: CombatRecordPort,
+        store: AbsenceStore,
+        clock: ClockPort,
+        r: Registrations,
+      ): EncounterAbsences =>
+        new EncounterAbsences(repository, source, combat, store, clock, r.repository),
+      inject: [
+        TOURNAMENT_ENCOUNTER_REPOSITORY,
+        TOURNAMENT_ENCOUNTER_SOURCE,
+        COMBAT_RECORD,
+        ABSENCE_STORE,
+        CLOCK,
+        REGISTRATIONS,
+      ],
+    },
+    {
+      provide: AbsenceReconciler,
+      useFactory: (absences: EncounterAbsences) =>
+        new AbsenceReconciler(absences, process.env.ABSENCE_RESOLVER_ENABLED !== 'false'),
+      inject: [ENCOUNTER_ABSENCES],
     },
     {
       provide: ENCOUNTER_ADMINISTRATION,

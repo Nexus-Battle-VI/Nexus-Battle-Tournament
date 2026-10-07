@@ -126,8 +126,9 @@ Salidas firmadas como servicio `tournament`, HMAC-SHA256 y timestamp en milisegu
 3. `003-tournament-bracket`: agrega snapshot y metadata nullable a encounters. Triggers comprueban roster, snapshot e identidad, impiden mutación y materializan catorce filas en la transacción de publicación. No recrea tablas de HU-83 ni incorpora `003-encounters` de la copia original.
 
 4. `004-tournament-admin-actions` (HU-85): tabla `tournament_encounter_actions` con los recibos de preparar/iniciar (actor, justa, acción, fecha y sala). Solo de adición; únicos `(torneo, justa, acción)` y `(torneo, operación)`.
+5. `005-tournament-absences` (HU-85): tablas `tournament_encounter_readiness` (quién aceptó y cuándo) y `tournament_encounter_absences` (una resolución por justa). Solo de adición.
 
-Preparación local: `npm ci`, `npm run build`, configurar PostgreSQL y `npm run migrate`; después arrancar con `npm start`. La composición no migra automáticamente. La instalación nueva aplica 001→002→003→004; una base publicada con 001 aplica 002→003→004. No hay importación automática desde el esquema incompatible sin publicar de la copia original. Las pruebas de actualización parten de 001 con roster, resultado y 120 eventos, comprueban preservación y páginas de 100+20.
+Preparación local: `npm ci`, `npm run build`, configurar PostgreSQL y `npm run migrate`; después arrancar con `npm start`. La composición no migra automáticamente. La instalación nueva aplica 001→002→003→004→005; una base publicada con 001 aplica 002→003→004→005. No hay importación automática desde el esquema incompatible sin publicar de la copia original. Las pruebas de actualización parten de 001 con roster, resultado y 120 eventos, comprueban preservación y páginas de 100+20.
 
 ## Administración de justas (HU-85)
 
@@ -136,7 +137,15 @@ Contrato: `Nexus-Battle-Infrastructure/docs/contracts/hu-85-tournament-encounter
 - `POST /:tournamentId/matches/:matchId/prepare` y `POST /:tournamentId/matches/:matchId/start`, cuerpo `{operationId}`. `matchId` es el identificador completo de HU-83 (`<tournamentId>:E1`).
 - `GET /:tournamentId/actions`: recibos en orden cronológico.
 
-Cada justa se serializa por sí misma; no hay bloqueo de torneo ni dependencia de la transmisión. Repetir una acción devuelve el recibo original con `replayed:true`. Ausencias, calendario, reprogramación y cancelación no tienen regla aprobada y no se implementan. La verificación y sus límites se registran en `docs/hu-85-verificacion.md` (tarea HU-85.4).
+Cada justa se serializa por sí misma; no hay bloqueo de torneo ni dependencia de la transmisión. Repetir una acción devuelve el recibo original con `replayed:true`. Reprogramación y cancelación no tienen regla aprobada y no se implementan; la ventana de aceptación y el avance por ausencia siguen la decisión de Carlos descrita abajo. La verificación y sus límites se registran en `docs/hu-85-verificacion.md` (tarea HU-85.4).
+
+### Ventana de aceptación y avance por ausencia (decisión de Carlos, pendiente de reflejarse en #470)
+
+- Cada justa de la primera ronda tiene como hora programada el inicio del torneo (`startsAt`). Desde esa hora los equipos disponen de **2 minutos** para aceptar el combate. Las rondas posteriores no tienen horario definido todavía: no abren ventana ni se resuelven.
+- `POST /api/v1/tournaments/:tournamentId/matches/:matchId/ready` (cualquier sesión): el integrante del JWT acepta. Errores: 403 `NOT_A_PARTICIPANT`, 409 `ACCEPTANCE_NOT_OPEN`, `ACCEPTANCE_CLOSED`, `NOT_SCHEDULED`, `PARTICIPANTS_UNRESOLVED`, `ENCOUNTER_FINISHED`. `GET .../readiness` devuelve la ventana, quién aceptó y la resolución.
+- Un equipo está **listo solo cuando aceptan todos sus integrantes**. Al cerrar la ventana: si ambos están listos se juega el combate; si solo uno, avanza ese; si ninguno, avanza el que tenga más jugadores listos y, con empate (incluido 0 a 0), se sortea y se registra el sorteo. Una justa que el administrador ya preparó con sala de Combat no se resuelve por ausencia.
+- El avance cuenta como victoria normal y se registra aparte: `status FINISHED`, `result.reason = 'ABSENCE'`, `outcome = 'WIN'`, `winnerTeamLabel` = id del equipo, sin sala ni eventos de Combat. Un barrido cada 5 s (`ABSENCE_RESOLVER_ENABLED`, activo por omisión) lo aplica una sola vez por justa.
+- Pendiente: pasar al ganador a la siguiente ronda (HU-80), 1v1 y 3v3 (registro, bracket y Combat), la pantalla del jugador para aceptar y el aviso a los jugadores.
 
 ## Verificación y límites
 
