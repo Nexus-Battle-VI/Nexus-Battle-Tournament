@@ -300,6 +300,35 @@ describe('HU-85: preparar e iniciar justas independientes', () => {
     expect(combat.startedRooms).toBe(0)
   })
 
+  it('Regla de la HU: sin derrotas automáticas; ausencias, el paso del tiempo y los rechazos no fijan resultado ni ganador', async () => {
+    await act('E1', 'prepare', 'prep-e1')
+    // Un año después de la fecha del torneo nadie inició E1: no hay ausencia, derrota ni cierre automático.
+    f.setNow('2027-12-31T00:00:00Z')
+    const rejected = await act('E5', 'prepare', 'prep-e5')
+    expect(rejected.status).toBe(409)
+    const all = await request(app.getHttpServer())
+      .get(`/api/v1/tournaments/${tid}/matches`)
+      .set('Authorization', 'Bearer p0')
+    expect(all.body).toHaveLength(14)
+    for (const match of all.body as { status: string; result?: unknown; closedAt: unknown }[]) {
+      expect(match.status).not.toBe('FINISHED')
+      expect(match.closedAt).toBeNull()
+    }
+    for (const label of ['E1', 'E5']) {
+      const info = await detail(label)
+      expect(info.body.result ?? null).toBeNull()
+      expect(info.body.closedAt).toBeNull()
+    }
+    expect((await detail('E1')).body.status).toBe('READY')
+    // Aun tarde, el administrador puede iniciar: iniciar no concluye nada ni asigna ganador.
+    const started = await act('E1', 'start', 'start-e1')
+    expect(started.body.status).toBe('IN_PROGRESS')
+    const after = await detail('E1')
+    expect(after.body.result ?? null).toBeNull()
+    expect(after.body.closedAt).toBeNull()
+    expect((await actions()).body.actions).toHaveLength(2)
+  })
+
   it('C12 CA-03: iniciar sin preparar da ENCOUNTER_NOT_PREPARED y no llama a Combat', async () => {
     const response = await act('E1', 'start', 'start-e1')
     expect(response.status).toBe(409)
