@@ -18,7 +18,7 @@ El owner se agrega desde JWT en posición cero. SOLO envía un arreglo vacío.
 El DTO antiguo `companionId` se conserva exclusivamente para DUO. Mezclar ambos
 campos es inválido. La respuesta contiene `members` con sujeto, posición y
 consentimiento individual; el campo público `companionId` es alias del segundo
-integrante cuando existe. En TRIO, `members` define el roster completo.
+integrante en DUO y null en SOLO/TRIO. `members` define el roster completo.
 
 Todos los miembros consienten y son elegibles antes de confirmar el cupo.
 No hay edición de roster: cancelar/rechazar una intención permite registrar otra.
@@ -93,16 +93,27 @@ la misma intención por justa; E1/E2 pueden continuar en paralelo. Los identific
 internos son `tournament:${encounterId}:prepare` y `:start`, en worker y recuperación admin.
 El actor técnico `tournament-worker` queda en la auditoría con actorType WORKER.
 
-El reconciliador observa cada segundo. Como medida conservadora de disponibilidad,
-un cierre incompleto sin observación durable durante los últimos diez segundos produce
-WINDOW_INTERRUPTED: mantiene aceptaciones, pero no infiere ganador ni reabre la
-ventana. Un reinicio dentro de una ventana OPEN no impide aceptar antes del deadline;
-ambos equipos completos conservan su derecho a combatir al cierre, incluso tras una
-pausa del worker. GET muestra CLOSED al deadline aunque aún falte la decisión durable.
+El reconciliador observa cada segundo. Una pausa del worker no cambia la regla de
+cierre: aplica los conteos registrados incluso sin ticks recientes. `lastObservedAt`
+es diagnóstico y no prueba disponibilidad del endpoint. Un reinicio dentro de OPEN
+no impide aceptar antes del deadline. GET muestra CLOSED al deadline aunque aún
+falte la decisión durable.
+
+Cada primera aceptación persiste un intento con JWT/roster, operación y hora válidos
+antes de confirmar el recibo en otra transacción por justa. La confirmación elimina
+los intentos pendientes de ese sujeto; un rechazo de negocio elimina el intento propio.
+Si una escritura falla o el proceso termina entre ambas transacciones, el intento
+queda durable. Un intento autorizado sin recibo al cierre produce
+ACCEPTANCE_SERVICE_INTERRUPTED: conserva recibos, sin ganador, sorteo ni nueva ventana.
+Un retry confirmado antes del deadline resuelve el pendiente. La evidencia cubre
+fallo de escritura inyectado y lectura desde otro pool; no una caída de infraestructura
+real. Fallar antes de persistir el intento no deja esta evidencia: detectar una caída
+completa del servicio/base durante OPEN requiere telemetría operativa durable externa.
+No se afirma detectar esa caída mediante el reloj o latidos del worker.
 Una ventana íntegra sin activar produce WINDOW_MISSED. Si los resultados
 previos no estaban confirmados a la apertura, PREVIOUS_RESULT_PENDING. La recuperación
 de estas incidencias necesita revisión operativa/política; no se reprograma implícitamente.
-Las pruebas de reloj representan ticks de un worker sano y separan los casos de caída.
+Las pruebas de reloj cierran directamente sin ticks y separan los intentos interrumpidos.
 
 Al cierre ambos completos crean intención de Combat; un solo completo gana por ausencia;
 dos incompletos usan el conteo mayor o un bit de `node:crypto.randomInt(2)` si empatan.
@@ -119,11 +130,11 @@ La final por ausencia declara campeón desde seeds y genera derechos una sola ve
 
 ## Wire reconciliado
 
-Se implementa revisión documental 2 de torneos-v3.0.0 (Infrastructure 043db7c).
+Se implementa revisión documental 3 de torneos-v3.0.0 (Infrastructure 4d4f677).
 El adaptador traduce tournamentMode a mode y envía teamSize, con HMAC caller tournament.
 El cuerpo DUO histórico permanece intacto. El lector usa la configuración v3 de Combat
 para exigir 1/2/3 participantes por lado; también valida los miembros contra HU-83.
-Combat ejercitado desde el checkout de C, 317726d (base dd67d47); su versión numérica
+Combat ejercitado desde el checkout de C, 0076458 (base dd67d47); su versión numérica
 interna es distinta de la versión pública de Tournament.
 
 ## Evidencia y límites

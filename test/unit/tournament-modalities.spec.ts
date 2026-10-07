@@ -25,7 +25,7 @@ describe('Modalidades configuradas, consentimientos y pago único por equipo', (
           invitedMemberIds: invites,
         })
         expect(teamMemberIds(team)).toEqual([owner, ...invites])
-        if (size === 1) expect(team.companionId).toBeNull()
+        expect(team.companionId).toBe(size === 2 ? invites[0] : null)
         for (const invited of invites)
           await f.registrations.consent(t.id, team.id, invited, 'c' + invited, true)
         await f.registrations.enter(t.id, team.id, owner, { operationId: 'p' + String(n) })

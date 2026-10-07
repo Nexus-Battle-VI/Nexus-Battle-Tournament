@@ -3,11 +3,10 @@ import {
   acceptanceCounts,
   ACCEPTANCE_POLICY,
   closeAcceptance,
-  MAX_OBSERVATION_GAP_MS,
   type MatchAcceptanceState,
   type ResolvedTeam,
 } from '../../domain/match-acceptance'
-import { requireRule, validateOperation } from '../../domain/registration'
+import { RegistrationError, requireRule, validateOperation } from '../../domain/registration'
 import { projectBracket } from '../../domain/progression'
 import {
   acceptanceReceipt,
@@ -83,6 +82,7 @@ export class MatchAcceptance {
       decidedAt: null,
       roster: null,
       acceptances: [],
+      pendingAcceptances: [],
       operations: {},
       decision: null,
       resolution: null,
@@ -98,23 +98,7 @@ export class MatchAcceptance {
     now: Date,
   ): void {
     if (s.phase === 'OPEN') {
-      if (
-        now.getTime() >= new Date(s.window.acceptanceClosesAt).getTime() &&
-        !acceptanceCounts(s).every((c) => c === s.teamSize) &&
-        (s.lastObservedAt === null ||
-          now.getTime() - new Date(s.lastObservedAt).getTime() >= MAX_OBSERVATION_GAP_MS)
-      ) {
-        s.phase = 'BLOCKED'
-        s.blocker = {
-          code: 'WINDOW_INTERRUPTED',
-          message:
-            'Falta observación operativa reciente al cierre. Requiere revisión; no se infiere una ausencia.',
-          responsible: 'TOURNAMENT_OPERATIONS',
-          since: now.toISOString(),
-        }
-      } else {
-        s.lastObservedAt = now.toISOString()
-      }
+      s.lastObservedAt = now.toISOString()
       return
     }
     if (s.phase !== 'SCHEDULED' || now.getTime() < new Date(s.window.acceptanceOpensAt).getTime())
@@ -148,7 +132,9 @@ export class MatchAcceptance {
   async accept(id: string, encounterId: string, subject: string, operationId: string) {
     validateOperation(operationId)
     const { initial, roster, readyOnTime } = await this.context(id, encounterId)
-    return this.store.change(initial, (s) => {
+    const requestId = randomUUID()
+    // La intención autorizada sobrevive a un fallo de escritura o reinicio posterior.
+    const replay = await this.store.change(initial, (s) => {
       const now = this.clock.now()
       this.observe(s, roster, readyOnTime, now)
       const team = (s.roster ?? roster)?.find((team) => team.memberIds.includes(subject))
@@ -188,24 +174,65 @@ export class MatchAcceptance {
         'La aceptación no está abierta.',
         409,
       )
-      const receipt = {
-        receiptId: randomUUID(),
-        tournamentId: id,
-        encounterId,
-        teamId: team.teamId,
+      s.pendingAcceptances.push({
+        requestId,
         subject,
         operationId,
-        acceptedAt: now.toISOString(),
-      }
-      s.acceptances.push(receipt)
-      Object.defineProperty(s.operations, operationId, {
-        value: { subject, receiptId: receipt.receiptId },
-        enumerable: true,
-        writable: true,
-        configurable: true,
+        requestedAt: now.toISOString(),
       })
-      return acceptanceReceipt(receipt, s.window, false)
+      return null
     })
+    if (replay !== null) return replay
+    try {
+      return await this.store.change(initial, (s) => {
+        const now = this.clock.now()
+        const team = s.roster?.find((team) => team.memberIds.includes(subject))
+        requireRule(team !== undefined, 'FORBIDDEN', 'Falta el jugador en el roster fijado.', 403)
+        const accepted = s.acceptances.find((a) => a.subject === subject)
+        const prior = Object.hasOwn(s.operations, operationId)
+          ? s.operations[operationId]
+          : undefined
+        requireRule(
+          prior === undefined || prior.subject === subject,
+          'OPERATION_CONFLICT',
+          'La operación pertenece a otro jugador.',
+          409,
+        )
+        if (accepted === undefined)
+          requireRule(
+            s.phase === 'OPEN' &&
+              now.getTime() >= new Date(s.window.acceptanceOpensAt).getTime() &&
+              now.getTime() < new Date(s.window.acceptanceClosesAt).getTime(),
+            'ACCEPTANCE_CLOSED',
+            'La aceptación no está abierta.',
+            409,
+          )
+        const receipt = accepted ?? {
+          receiptId: randomUUID(),
+          tournamentId: id,
+          encounterId,
+          teamId: team.teamId,
+          subject,
+          operationId,
+          acceptedAt: now.toISOString(),
+        }
+        if (accepted === undefined) s.acceptances.push(receipt)
+        s.pendingAcceptances = s.pendingAcceptances.filter((r) => r.subject !== subject)
+        Object.defineProperty(s.operations, operationId, {
+          value: { subject, receiptId: receipt.receiptId },
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        })
+        return acceptanceReceipt(receipt, s.window, accepted !== undefined)
+      })
+    } catch (error: unknown) {
+      if (error instanceof RegistrationError && error.status < 500)
+        await this.store.change(initial, (s) => {
+          s.pendingAcceptances = s.pendingAcceptances.filter((r) => r.requestId !== requestId)
+        })
+      throw error
+    }
   }
   async decide(id: string, encounterId: string): Promise<MatchAcceptanceState> {
     const { initial, roster, readyOnTime } = await this.context(id, encounterId)

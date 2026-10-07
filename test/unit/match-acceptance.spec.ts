@@ -31,7 +31,7 @@ describe('HU-85 v3: reloj, aceptación individual, decisión durable y avance po
     await expect(
       f.acceptance.accept(f.id, id, f.b.seeds[1]!.memberIds[0]!, 'once'),
     ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' })
-    await f.setClose()
+    f.setClose()
     await expect(
       f.acceptance.accept(f.id, id, f.b.seeds[1]!.memberIds[0]!, 'late'),
     ).rejects.toMatchObject({ code: 'ACCEPTANCE_CLOSED' })
@@ -48,6 +48,7 @@ describe('HU-85 v3: reloj, aceptación individual, decisión durable y avance po
   })
   it.each([
     { a: 3, b: 2, rule: 'COMPLETE_TEAM' },
+    { a: 3, b: 0, rule: 'COMPLETE_TEAM' },
     { a: 1, b: 2, rule: 'MORE_ACCEPTANCES' },
     { a: 2, b: 0, rule: 'MORE_ACCEPTANCES' },
   ])('decide $a–$b sin sorteo ni sala', async ({ a, b, rule }) => {
@@ -55,7 +56,7 @@ describe('HU-85 v3: reloj, aceptación individual, decisión durable y avance po
     f.setOpen()
     await f.acceptSide('E1', 0, a)
     await f.acceptSide('E1', 1, b)
-    await f.setClose()
+    f.setClose()
     await f.reconciliation.run(f.id, f.e().encounterId)
     const state = await f.store.read(f.id, f.e().encounterId)
     expect(state!.resolution).toMatchObject({
@@ -83,7 +84,7 @@ describe('HU-85 v3: reloj, aceptación individual, decisión durable y avance po
       f.setOpen()
       await f.acceptSide('E1', 0, count)
       await f.acceptSide('E1', 1, count)
-      await f.setClose()
+      f.setClose()
       await Promise.all([
         f.worker().run(f.id, f.e().encounterId),
         f.worker().run(f.id, f.e().encounterId),
@@ -111,7 +112,7 @@ describe('HU-85 v3: reloj, aceptación individual, decisión durable y avance po
     ).rejects.toMatchObject({ code: 'ACCEPTANCE_REQUIRED' })
     await f.reconciliation.run(f.id, f.e().encounterId)
     expect(f.commands.createRoom).not.toHaveBeenCalled()
-    await f.setClose()
+    f.setClose()
     await Promise.all([
       f.worker().run(f.id, f.e().encounterId),
       f.worker().run(f.id, f.e().encounterId),
@@ -149,7 +150,7 @@ describe('HU-85 v3: reloj, aceptación individual, decisión durable y avance po
     await expect(
       f.acceptance.accept(f.id, f.e('E5').encounterId, f.b.seeds[0]!.memberIds[0]!, 'late'),
     ).rejects.toMatchObject({ code: 'ACCEPTANCE_CLOSED' })
-    await f.setClose(2)
+    f.setClose(2)
     await f.reconciliation.run(f.id, f.e('E5').encounterId)
     expect((await f.store.read(f.id, f.e('E5').encounterId))!.resolution).toBeNull()
     expect(f.commands.createRoom).not.toHaveBeenCalled()
@@ -157,7 +158,7 @@ describe('HU-85 v3: reloj, aceptación individual, decisión durable y avance po
   })
   it('reinicio que perdió toda la ventana deja incidencia visible; no fabrica ausencia 0–0', async () => {
     const f = await acceptanceFixture()
-    await f.setClose()
+    f.setClose()
     await f.reconciliation.run(f.id, f.e().encounterId)
     expect((await f.store.read(f.id, f.e().encounterId))!).toMatchObject({
       phase: 'BLOCKED',
@@ -168,22 +169,58 @@ describe('HU-85 v3: reloj, aceptación individual, decisión durable y avance po
     expect(f.random.bit).not.toHaveBeenCalled()
     expect(f.commands.startRoom).not.toHaveBeenCalled()
   })
-  it('reinicio durante ventana abierta conserva aceptaciones y bloquea la incertidumbre operativa sin ganador', async () => {
+  it('un intento autorizado interrumpido conserva recibos y deja incidencia sin ganador al cierre', async () => {
     const f = await acceptanceFixture()
     f.setOpen()
     await f.acceptSide('E1', 0, 1)
-    // Caída de servidor durante la ventana, sin los ticks sanos que representa setClose.
+    const write = f.store.change.bind(f.store)
+    jest
+      .spyOn(f.store, 'change')
+      .mockImplementationOnce(write)
+      .mockRejectedValueOnce(new Error('Escritura interrumpida'))
+    await expect(
+      f.acceptance.accept(f.id, f.e().encounterId, f.b.seeds[1]!.memberIds[0]!, 'interrupted'),
+    ).rejects.toThrow('Escritura interrumpida')
     f.setNow(f.window().acceptanceClosesAt)
     await f.worker().run(f.id, f.e().encounterId)
     expect(await f.store.read(f.id, f.e().encounterId)).toMatchObject({
       phase: 'BLOCKED',
       resolution: null,
       decision: null,
-      blocker: { code: 'WINDOW_INTERRUPTED' },
+      blocker: { code: 'ACCEPTANCE_SERVICE_INTERRUPTED' },
     })
     expect((await f.store.read(f.id, f.e().encounterId))!.acceptances).toHaveLength(1)
     expect(f.random.bit).not.toHaveBeenCalled()
     expect((await f.lifecycle.read(f.id)).results).toEqual([])
+  })
+  it('recuperar el intento antes del deadline elimina la incertidumbre y conserva un único recibo', async () => {
+    const f = await acceptanceFixture(),
+      e = f.e().encounterId,
+      subject = f.b.seeds[0]!.memberIds[0]!
+    f.setOpen()
+    const write = f.store.change.bind(f.store)
+    jest
+      .spyOn(f.store, 'change')
+      .mockImplementationOnce(write)
+      .mockRejectedValueOnce(new Error('Escritura interrumpida'))
+    await expect(f.acceptance.accept(f.id, e, subject, 'recover')).rejects.toThrow(
+      'Escritura interrumpida',
+    )
+    expect((await f.store.read(f.id, e))!.pendingAcceptances).toHaveLength(1)
+    const receipt = await f.acceptance.accept(f.id, e, subject, 'recover')
+    expect((await f.store.read(f.id, e))!.pendingAcceptances).toEqual([])
+    expect(await f.acceptance.accept(f.id, e, subject, 'recover')).toEqual({
+      ...receipt,
+      replayed: true,
+    })
+    f.setClose()
+    await f.worker().run(f.id, e)
+    expect(await f.store.read(f.id, e)).toMatchObject({
+      phase: 'CLOSED',
+      decision: 'TOURNAMENT',
+      blocker: null,
+      resolution: { acceptedCounts: [1, 0], rule: 'MORE_ACCEPTANCES' },
+    })
   })
   it('NO_WINNER del registro validado conserva resolución PLAYED y no se sortea como ausencia', async () => {
     const f = await acceptanceFixture()
@@ -230,7 +267,7 @@ describe('HU-85 v3: reloj, aceptación individual, decisión durable y avance po
       f.setOpen()
       await f.acceptSide()
       await f.acceptSide('E1', 1)
-      await f.setClose()
+      f.setClose()
       const rooms = new Set<string>(),
         battles = new Set<string>()
       let lose = true
@@ -276,7 +313,7 @@ describe('HU-85 v3: reloj, aceptación individual, decisión durable y avance po
       f.setOpen(round)
       await f.reconciliation.sweep()
       expect((await f.progress.view(f.id)).champion).toBeNull()
-      await f.setClose(round)
+      f.setClose(round)
       await f.reconciliation.sweep()
     }
     const state = await f.lifecycle.read(f.id),

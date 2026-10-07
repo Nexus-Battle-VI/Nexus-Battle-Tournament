@@ -92,7 +92,7 @@ CREATE TRIGGER accepted_player_immutable BEFORE UPDATE OR DELETE ON tournament_a
 CREATE TRIGGER accepted_operation_immutable BEFORE UPDATE OR DELETE ON tournament_acceptance_operations FOR EACH ROW EXECUTE FUNCTION immutable_acceptance_record();
 CREATE TRIGGER tournament_resolution_immutable BEFORE UPDATE OR DELETE ON tournament_resolutions FOR EACH ROW EXECUTE FUNCTION immutable_acceptance_record();
 CREATE FUNCTION validate_tournament_acceptance_state() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE s jsonb; t record; e record; w jsonb; a jsonb; counts jsonb; winner text; side int; full_a boolean; full_b boolean; resolution jsonb; m jsonb; p jsonb;
+DECLARE s jsonb; t record; e record; w jsonb; a jsonb; counts jsonb; winner text; side int; full_a boolean; full_b boolean; resolution jsonb; m jsonb; p jsonb; request jsonb;
 BEGIN
  SELECT data INTO s FROM tournament_match_acceptance WHERE tournament_id=NEW.tournament_id AND encounter_id=NEW.encounter_id;
  SELECT * INTO t FROM tournaments WHERE id=NEW.tournament_id;
@@ -134,6 +134,15 @@ BEGIN
    NOT EXISTS(SELECT 1 FROM jsonb_array_elements(s->'roster') x WHERE x->>'teamId'=a->>'teamId' AND x->'memberIds' ? (a->>'subject')) THEN
     RAISE EXCEPTION 'INVALID_PLAYER_ACCEPTANCE' USING ERRCODE='23514'; END IF;
  END LOOP;
+ IF jsonb_typeof(s->'pendingAcceptances') IS DISTINCT FROM 'array' THEN
+   RAISE EXCEPTION 'INVALID_PENDING_ACCEPTANCE' USING ERRCODE='23514'; END IF;
+ FOR request IN SELECT value FROM jsonb_array_elements(s->'pendingAcceptances') LOOP
+  IF NOT COALESCE(length(request->>'requestId')>0 AND length(request->>'operationId')>0 AND
+    (request->>'requestedAt')::timestamptz>=(w->>'acceptanceOpensAt')::timestamptz AND
+    (request->>'requestedAt')::timestamptz<(w->>'acceptanceClosesAt')::timestamptz,false) OR NOT EXISTS(
+    SELECT 1 FROM jsonb_array_elements(s->'roster') x WHERE x->'memberIds' ? (request->>'subject')) THEN
+   RAISE EXCEPTION 'INVALID_PENDING_ACCEPTANCE' USING ERRCODE='23514'; END IF;
+ END LOOP;
  IF (SELECT count(*) FROM tournament_acceptance_operations WHERE tournament_id=NEW.tournament_id AND encounter_id=NEW.encounter_id)
    <>(SELECT count(*) FROM jsonb_each(s->'operations')) THEN RAISE EXCEPTION 'INVALID_ACCEPTANCE_OPERATIONS' USING ERRCODE='23514'; END IF;
  IF EXISTS(SELECT 1 FROM jsonb_each(s->'operations') op WHERE NOT EXISTS(
@@ -146,8 +155,10 @@ BEGIN
    LEFT JOIN tournament_acceptances p ON p.tournament_id=NEW.tournament_id AND p.encounter_id=NEW.encounter_id AND p.team_id=v->>'teamId' GROUP BY n) q;
   full_a:=(counts->>0)::int=t.team_size;full_b:=(counts->>1)::int=t.team_size;resolution:=s->'resolution';
   IF s->>'phase'<>'CLOSED' OR s->>'openedAt' IS NULL OR s->>'decidedAt' IS NULL OR
-    (s->>'decidedAt')::timestamptz<(w->>'acceptanceClosesAt')::timestamptz OR
-    (s->>'decidedAt')::timestamptz-(s->>'lastObservedAt')::timestamptz>=interval '10 seconds' THEN RAISE EXCEPTION 'ACCEPTANCE_CLOSE_REQUIRED' USING ERRCODE='23514'; END IF;
+    (s->>'decidedAt')::timestamptz<(w->>'acceptanceClosesAt')::timestamptz THEN RAISE EXCEPTION 'ACCEPTANCE_CLOSE_REQUIRED' USING ERRCODE='23514'; END IF;
+  IF EXISTS(SELECT 1 FROM jsonb_array_elements(s->'pendingAcceptances') q(pending) WHERE NOT EXISTS(
+    SELECT 1 FROM tournament_acceptances a WHERE a.tournament_id=NEW.tournament_id AND a.encounter_id=NEW.encounter_id AND a.subject=q.pending->>'subject')) THEN
+   RAISE EXCEPTION 'UNCONFIRMED_ACCEPTANCE_REQUEST' USING ERRCODE='23514'; END IF;
   IF s->>'decision'='COMBAT' THEN
    IF NOT COALESCE(full_a AND full_b AND s->'resolution'='null'::jsonb AND s->'combatIntent'<>'null'::jsonb,false) THEN
     RAISE EXCEPTION 'COMPLETE_ACCEPTANCE_REQUIRED' USING ERRCODE='23514'; END IF;

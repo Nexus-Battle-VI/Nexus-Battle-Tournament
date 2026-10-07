@@ -68,17 +68,7 @@ export const acceptanceFixture = async (
   const setOpen = (round = 1) => {
     f.setNow(window(round).acceptanceOpensAt)
   }
-  const setClose = async (round = 1) => {
-    // Reloj controlado: representar los ticks de un worker sano durante la ventana.
-    const active = []
-    for (const m of b.matches.filter((m) => m.round === round)) {
-      if ((await store.read(f.id, m.encounterId))?.phase === 'OPEN') active.push(m.encounterId)
-    }
-    const end = new Date(window(round).acceptanceClosesAt).getTime()
-    for (let at = f.clock.now().getTime() + 5000; at < end; at += 5000) {
-      f.setNow(new Date(at).toISOString())
-      await Promise.all(active.map((e) => acceptance.decide(f.id, e)))
-    }
+  const setClose = (round = 1) => {
     f.setNow(window(round).acceptanceClosesAt)
   }
   const acceptSide = async (label = 'E1', side = 0, count: number = f.t.teamSize) => {

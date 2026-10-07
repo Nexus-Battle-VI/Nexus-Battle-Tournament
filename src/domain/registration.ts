@@ -303,7 +303,7 @@ export const publicTeam = (tournamentId: string, team: RegistrationTeam) => ({
   name: team.name,
   avatar: team.avatar,
   ownerId: team.ownerId,
-  companionId: teamMemberIds(team)[1] ?? null,
+  companionId: teamMemberIds(team).length === 2 ? (teamMemberIds(team)[1] ?? null) : null,
   members: teamMembers(team),
   status: team.status,
   createdAt: team.createdAt,

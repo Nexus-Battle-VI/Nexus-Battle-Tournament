@@ -138,7 +138,7 @@ describe('Calendario y aceptación HTTP v3; JWT controlado, sin cuentas reales',
     expect(foreign.body.myAcceptance).toBeNull()
     expect(foreign.body.acceptedSubjects).toBeUndefined()
     expect(foreign.body.acceptance).toBeUndefined()
-    await f.setClose()
+    f.setClose()
     expect((await accept(f.b.seeds[1]!.memberIds[0], { operationId: 'late' })).body.code).toBe(
       'ACCEPTANCE_CLOSED',
     )
@@ -146,7 +146,7 @@ describe('Calendario y aceptación HTTP v3; JWT controlado, sin cuentas reales',
   it('la única consulta matches devuelve resolución ABSENCE sin sala, héroes ni eventos; no permite admin combatirla', async () => {
     f.setOpen()
     await accept()
-    await f.setClose()
+    f.setClose()
     await f.reconciliation.run(f.id, f.e().encounterId)
     const d = await detail()
     expect(d.body).toMatchObject({
@@ -181,6 +181,30 @@ describe('Calendario y aceptación HTTP v3; JWT controlado, sin cuentas reales',
       .set('Authorization', 'Bearer admin')
       .send({ operationId: 'bypass' })
     expect(admin.status).toBe(409)
+    expect(f.commands.createRoom).not.toHaveBeenCalled()
+  })
+  it('un intento HTTP interrumpido queda visible al cierre sin publicar sujetos pendientes ni fabricar ganador', async () => {
+    f.setOpen()
+    const write = f.store.change.bind(f.store)
+    jest
+      .spyOn(f.store, 'change')
+      .mockImplementationOnce(write)
+      .mockRejectedValueOnce(new Error('Escritura interrumpida'))
+    expect((await accept()).status).toBe(500)
+    f.setClose()
+    await f.worker().run(f.id, f.e().encounterId)
+    const d = await detail()
+    expect(d.body).toMatchObject({
+      acceptanceStatus: 'BLOCKED_DELAY',
+      operationalStatus: 'DEPENDENCY_ERROR',
+      acceptedCounts: [0, 0],
+      resolution: null,
+      winnerTeamId: null,
+      loserTeamId: null,
+      blockReason: { code: 'ACCEPTANCE_SERVICE_INTERRUPTED', responsible: 'TOURNAMENT_OPERATIONS' },
+    })
+    expect(d.body.pendingAcceptances).toBeUndefined()
+    expect(f.random.bit).not.toHaveBeenCalled()
     expect(f.commands.createRoom).not.toHaveBeenCalled()
   })
   it('falta de dependencias expone bloqueo seguro con responsable; GET no abre ni reprograma', async () => {

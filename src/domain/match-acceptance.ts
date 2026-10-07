@@ -1,8 +1,6 @@
 import { requireRule } from './registration'
 import type { TournamentMode, TeamSize } from './registration'
 export const ACCEPTANCE_POLICY = 'ROUND_ACCEPTANCE_V1' as const
-// El worker observa cada segundo. Un cierre incompleto sin observación reciente requiere revisar la incidencia.
-export const MAX_OBSERVATION_GAP_MS = 10_000
 export interface RoundWindow {
   round: number
   acceptanceOpensAt: string
@@ -27,6 +25,12 @@ export interface AcceptedPlayer {
   subject: string
   operationId: string
   acceptedAt: string
+}
+export interface PendingAcceptance {
+  requestId: string
+  subject: string
+  operationId: string
+  requestedAt: string
 }
 export interface ResolvedTeam {
   teamId: string
@@ -74,6 +78,7 @@ export interface MatchAcceptanceState {
   decidedAt: string | null
   roster: [ResolvedTeam, ResolvedTeam] | null
   acceptances: AcceptedPlayer[]
+  pendingAcceptances: PendingAcceptance[]
   operations: Record<string, { subject: string; receiptId: string }>
   decision: 'COMBAT' | 'TOURNAMENT' | null
   resolution: TournamentResolution | null
@@ -99,6 +104,20 @@ export const closeAcceptance = (
   )
   requireRule(s.roster !== null, 'PARTICIPANTS_UNRESOLVED', 'Faltan equipos resueltos.', 409)
   const counts = acceptanceCounts(s)
+  const unresolved = s.pendingAcceptances.find(
+    (request) => !s.acceptances.some((a) => a.subject === request.subject),
+  )
+  if (unresolved !== undefined) {
+    s.phase = 'BLOCKED'
+    s.blocker = {
+      code: 'ACCEPTANCE_SERVICE_INTERRUPTED',
+      message:
+        'Un intento autorizado de aceptación quedó sin confirmar al cierre. Requiere revisión operativa, sin inferir ausencia.',
+      since: unresolved.requestedAt,
+      responsible: 'TOURNAMENT_OPERATIONS',
+    }
+    return
+  }
   s.phase = 'CLOSED'
   s.decidedAt = now.toISOString()
   if (counts.every((c) => c === s.teamSize)) {

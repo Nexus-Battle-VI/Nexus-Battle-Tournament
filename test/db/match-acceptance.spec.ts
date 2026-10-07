@@ -82,7 +82,7 @@ describe('Aceptación, ausencias y worker con PostgreSQL real y dos pools', () =
     await expect(
       other.acceptance.accept(f.id, f.e('E2').encounterId, f.b.seeds[2]!.memberIds[0]!, 'alias'),
     ).rejects.toMatchObject({ code: 'OPERATION_CONFLICT' })
-    await f.setClose()
+    f.setClose()
     const race = await Promise.allSettled([
       other.acceptance.accept(f.id, e, f.b.seeds[1]!.memberIds[0]!, 'deadline'),
       f.reconciliation.run(f.id, e),
@@ -106,7 +106,7 @@ describe('Aceptación, ausencias y worker con PostgreSQL real y dos pools', () =
       e = f.e().encounterId
     f.setOpen()
     await f.acceptance.decide(f.id, e)
-    await f.setClose()
+    f.setClose()
     await Promise.all([f.reconciliation.run(f.id, e), other.worker.run(f.id, e)])
     expect(f.random.bit.mock.calls.length + other.random.bit.mock.calls.length).toBe(1)
     const state = await f.store.read(f.id, e)
@@ -139,7 +139,7 @@ describe('Aceptación, ausencias y worker con PostgreSQL real y dos pools', () =
     f.setOpen()
     await f.acceptSide()
     await f.acceptSide('E1', 1)
-    await f.setClose()
+    f.setClose()
     f.commands.startRoom.mockRejectedValueOnce(new Error('Respuesta perdida tras iniciar'))
     await f.reconciliation.run(f.id, e)
     const pending = await other.store.read(f.id, e)
@@ -160,11 +160,11 @@ describe('Aceptación, ausencias y worker con PostgreSQL real y dos pools', () =
   it('ventana perdida y dependencia retrasada quedan bloqueadas en persistencia sin sorteo', async () => {
     const f = await setup(),
       other = reborn(f)
-    await f.setClose()
+    f.setClose()
     await f.reconciliation.run(f.id, f.e().encounterId)
     f.setOpen(2)
     await other.worker.run(f.id, f.e('E5').encounterId)
-    await f.setClose(2)
+    f.setClose(2)
     await reborn(f).worker.run(f.id, f.e('E5').encounterId)
     expect((await f.store.read(f.id, f.e().encounterId))!.blocker!.code).toBe('WINDOW_MISSED')
     expect((await other.store.read(f.id, f.e('E5').encounterId))!.blocker!.code).toBe(
@@ -179,24 +179,62 @@ describe('Aceptación, ausencias y worker con PostgreSQL real y dos pools', () =
       e = f.e().encounterId
     f.setOpen()
     await f.acceptSide('E1', 0, 2)
+    const write = f.store.change.bind(f.store)
+    jest
+      .spyOn(f.store, 'change')
+      .mockImplementationOnce(write)
+      .mockRejectedValueOnce(new Error('Escritura interrumpida'))
+    await expect(
+      f.acceptance.accept(f.id, e, f.b.seeds[1]!.memberIds[0]!, 'interrupted'),
+    ).rejects.toThrow('Escritura interrumpida')
     f.setNow(f.window().acceptanceClosesAt)
     await reborn(f).worker.run(f.id, e)
     expect(await f.store.read(f.id, e)).toMatchObject({
       phase: 'BLOCKED',
       decision: null,
       resolution: null,
-      blocker: { code: 'WINDOW_INTERRUPTED' },
+      blocker: { code: 'ACCEPTANCE_SERVICE_INTERRUPTED' },
     })
     expect((await f.store.read(f.id, e))!.acceptances).toHaveLength(2)
+    expect((await reborn(f).store.read(f.id, e))!.pendingAcceptances).toHaveLength(1)
     expect(await f.store.resolutions(f.id)).toEqual([])
     expect((await f.lifecycle.read(f.id)).results).toEqual([])
+  })
+  it('pausa del worker conserva 3–0 y 0–0; SQL no exige ticks para una ausencia', async () => {
+    const f = await setup(),
+      other = reborn(f),
+      e = f.e().encounterId,
+      empty = f.e('E2').encounterId
+    f.setOpen()
+    await f.acceptSide('E1', 0, 3)
+    await f.acceptance.decide(f.id, empty)
+    f.setClose()
+    await Promise.all([other.worker.run(f.id, e), other.worker.run(f.id, empty)])
+    expect(await other.store.read(f.id, e)).toMatchObject({
+      phase: 'CLOSED',
+      decision: 'TOURNAMENT',
+      blocker: null,
+      resolution: {
+        rule: 'COMPLETE_TEAM',
+        acceptedCounts: [3, 0],
+        winnerTeamId: f.b.seeds[0]!.teamId,
+      },
+    })
+    expect(await other.store.read(f.id, empty)).toMatchObject({
+      phase: 'CLOSED',
+      decision: 'TOURNAMENT',
+      blocker: null,
+      resolution: { rule: 'FAIR_COIN', acceptedCounts: [0, 0], coinBit: 1 },
+    })
+    expect(other.random.bit).toHaveBeenCalledTimes(1)
+    expect(f.commands.createRoom).not.toHaveBeenCalled()
   })
   it('Final por ausencia conserva campeón TRIO, 14 victorias únicas y derechos pendientes recuperables', async () => {
     const f = await setup()
     for (let round = 1; round <= 6; round++) {
       f.setOpen(round)
       await f.reconciliation.sweep()
-      await f.setClose(round)
+      f.setClose(round)
       await f.reconciliation.sweep()
     }
     const state = await f.lifecycle.read(f.id)
