@@ -2,6 +2,18 @@ import { Module, type CanActivate } from '@nestjs/common'
 import { APP_GUARD, Reflector } from '@nestjs/core'
 import type { Kysely } from 'kysely'
 
+import { BroadcastsController } from '../../adapters/inbound/http/broadcasts.controller'
+import { Broadcasts, BROADCASTS } from '../../application/use-cases/Broadcasts'
+import { InMemoryBroadcastRepository } from '../../adapters/outbound/persistence/InMemoryBroadcastRepository'
+import { PostgresBroadcastRepository } from '../../adapters/outbound/persistence/PostgresBroadcastRepository'
+import { ExternalLinksController } from '../../adapters/inbound/http/external-links.controller'
+import { ExternalLinks, EXTERNAL_LINKS } from '../../application/use-cases/ExternalLinks'
+import { InMemoryExternalLinksRepository } from '../../adapters/outbound/persistence/InMemoryExternalLinksRepository'
+import { PostgresExternalLinksRepository } from '../../adapters/outbound/persistence/PostgresExternalLinksRepository'
+import {
+  TOURNAMENT_MATCH_READ,
+  type TournamentMatchReadPort,
+} from '../../application/ports/TournamentMatchReadPort'
 import { HealthController } from '../../adapters/inbound/http/health.controller'
 import { READINESS_CHECKS, VERSION_REPORT } from '../../adapters/inbound/http/tokens.health'
 import { TournamentMatchesController } from '../../adapters/inbound/http/tournament-matches.controller'
@@ -64,6 +76,41 @@ import type { ReadinessCheck, VersionReport } from '../health/health'
 import { describeError } from '../observability/describe-error'
 import { createLogger, type Logger } from '../observability/logger'
 import { createDatabase, pingDatabase } from '../persistence/database'
+import { PROGRESSIONS, Progressions } from '../../application/use-cases/Progressions'
+import { PRIZES, Prizes } from '../../application/use-cases/Prizes'
+import {
+  LIFECYCLE_REPOSITORY,
+  PRIZE_DESTINATION,
+  type LifecycleRepository,
+  type TournamentPrizeDestination,
+} from '../../application/ports/LifecyclePorts'
+import { ArchivedTournamentMatchReadAdapter } from '../../adapters/outbound/combat/ArchivedTournamentMatchReadAdapter'
+import { InMemoryLifecycleRepository } from '../../adapters/outbound/persistence/InMemoryLifecycleRepository'
+import { PostgresLifecycleRepository } from '../../adapters/outbound/persistence/PostgresLifecycleRepository'
+import { TournamentPrizeClient } from '../../adapters/outbound/http/TournamentPrizeClient'
+import { ResultsPrizesController } from '../../adapters/inbound/http/results-prizes.controller'
+import { LifecycleReconciler } from '../scheduling/lifecycle-reconciler'
+import {
+  MATCH_ACCEPTANCE_STORE,
+  FAIR_RANDOM,
+  type MatchAcceptanceStore,
+  type FairRandomPort,
+} from '../../application/ports/MatchAcceptancePorts'
+import { MATCH_ACCEPTANCE, MatchAcceptance } from '../../application/use-cases/MatchAcceptance'
+import {
+  ACCEPTANCE_RECONCILIATION,
+  AcceptanceReconciliation,
+} from '../../application/use-cases/AcceptanceReconciliation'
+import { InMemoryMatchAcceptanceStore } from '../../adapters/outbound/persistence/InMemoryMatchAcceptanceStore'
+import { PostgresMatchAcceptanceStore } from '../../adapters/outbound/persistence/PostgresMatchAcceptanceStore'
+import { CryptoFairRandom } from '../../adapters/outbound/system/CryptoFairRandom'
+import { AcceptanceReconciler } from '../scheduling/acceptance-reconciler'
+import { MatchAcceptanceController } from '../../adapters/inbound/http/match-acceptance.controller'
+import {
+  PRIZE_RECIPIENTS,
+  type TournamentPrizeRecipients,
+} from '../../application/ports/LifecyclePorts'
+import { TournamentPrizeRecipientsClient } from '../../adapters/outbound/http/TournamentPrizeRecipientsClient'
 
 export const APP_CONFIG = Symbol('AppConfig')
 export const LOGGER = Symbol('Logger')
@@ -89,13 +136,156 @@ export const INTERNAL_CALLERS: readonly string[] = []
  */
 @Module({
   controllers: [
+    BroadcastsController,
+    ExternalLinksController,
     HealthController,
     TournamentMatchesController,
     RegistrationsController,
     BracketsController,
     EncounterAdminController,
+    ResultsPrizesController,
+    MatchAcceptanceController,
   ],
   providers: [
+    {
+      provide: TOURNAMENT_MATCH_READ,
+      useFactory: (
+        repository: TournamentEncounterRepositoryPort,
+        combat: CombatRecordPort,
+      ): TournamentMatchReadPort => new ArchivedTournamentMatchReadAdapter(repository, combat),
+      inject: [TOURNAMENT_ENCOUNTER_REPOSITORY, COMBAT_RECORD],
+    },
+    {
+      provide: BROADCASTS,
+      useFactory: (
+        db: Kysely<Database> | null,
+        r: Registrations,
+        m: TournamentMatchReadPort,
+        clock: ClockPort,
+      ) =>
+        new Broadcasts(
+          db === null ? new InMemoryBroadcastRepository() : new PostgresBroadcastRepository(db),
+          r.repository,
+          m,
+          clock,
+        ),
+      inject: [DATABASE, REGISTRATIONS, TOURNAMENT_MATCH_READ, CLOCK],
+    },
+    {
+      provide: EXTERNAL_LINKS,
+      useFactory: (db: Kysely<Database> | null, r: Registrations, clock: ClockPort) =>
+        new ExternalLinks(
+          db === null
+            ? new InMemoryExternalLinksRepository()
+            : new PostgresExternalLinksRepository(db),
+          r.repository,
+          clock,
+        ),
+      inject: [DATABASE, REGISTRATIONS, CLOCK],
+    },
+
+    {
+      provide: PRIZE_RECIPIENTS,
+      useFactory: (config: AppConfig): TournamentPrizeRecipients =>
+        new TournamentPrizeRecipientsClient(
+          process.env.INVENTORY_BASE_URL,
+          config.internalServiceAuthSecret,
+        ),
+      inject: [APP_CONFIG],
+    },
+    {
+      provide: MATCH_ACCEPTANCE_STORE,
+      useFactory: (db: Kysely<Database> | null): MatchAcceptanceStore =>
+        db === null ? new InMemoryMatchAcceptanceStore() : new PostgresMatchAcceptanceStore(db),
+      inject: [DATABASE],
+    },
+    { provide: FAIR_RANDOM, useFactory: (): FairRandomPort => new CryptoFairRandom() },
+    {
+      provide: MATCH_ACCEPTANCE,
+      useFactory: (
+        store: MatchAcceptanceStore,
+        r: Registrations,
+        p: Progressions,
+        clock: ClockPort,
+        random: FairRandomPort,
+      ) => new MatchAcceptance(store, r.repository, p, clock, random),
+      inject: [MATCH_ACCEPTANCE_STORE, REGISTRATIONS, PROGRESSIONS, CLOCK, FAIR_RANDOM],
+    },
+    {
+      provide: ACCEPTANCE_RECONCILIATION,
+      useFactory: (
+        r: Registrations,
+        a: MatchAcceptance,
+        admin: EncounterAdministration,
+        p: Progressions,
+      ) => new AcceptanceReconciliation(r.repository, a, admin, p),
+      inject: [REGISTRATIONS, MATCH_ACCEPTANCE, ENCOUNTER_ADMINISTRATION, PROGRESSIONS],
+    },
+    {
+      provide: AcceptanceReconciler,
+      useFactory: (r: AcceptanceReconciliation) => new AcceptanceReconciler(r),
+      inject: [ACCEPTANCE_RECONCILIATION],
+    },
+    {
+      provide: LIFECYCLE_REPOSITORY,
+      useFactory: (db: Kysely<Database> | null): LifecycleRepository =>
+        db === null ? new InMemoryLifecycleRepository() : new PostgresLifecycleRepository(db),
+      inject: [DATABASE],
+    },
+    {
+      provide: PROGRESSIONS,
+      useFactory: (
+        store: LifecycleRepository,
+        r: Registrations,
+        encounters: TournamentEncounterRepositoryPort,
+        combat: CombatRecordPort,
+        clock: ClockPort,
+        acceptance: MatchAcceptanceStore,
+      ) =>
+        new Progressions(
+          store,
+          r.repository,
+          new ArchivedTournamentMatchReadAdapter(encounters, combat),
+          clock,
+          encounters,
+          acceptance,
+        ),
+      inject: [
+        LIFECYCLE_REPOSITORY,
+        REGISTRATIONS,
+        TOURNAMENT_ENCOUNTER_REPOSITORY,
+        COMBAT_RECORD,
+        CLOCK,
+        MATCH_ACCEPTANCE_STORE,
+      ],
+    },
+    {
+      provide: PRIZE_DESTINATION,
+      useFactory: (config: AppConfig): TournamentPrizeDestination =>
+        new TournamentPrizeClient(
+          process.env.WALLET_BASE_URL,
+          process.env.INVENTORY_BASE_URL,
+          config.internalServiceAuthSecret,
+        ),
+      inject: [APP_CONFIG],
+    },
+    {
+      provide: PRIZES,
+      useFactory: (
+        store: LifecycleRepository,
+        r: Registrations,
+        destination: TournamentPrizeDestination,
+        clock: ClockPort,
+        recipients: TournamentPrizeRecipients,
+      ) => new Prizes(store, r.repository, destination, clock, recipients),
+      inject: [LIFECYCLE_REPOSITORY, REGISTRATIONS, PRIZE_DESTINATION, CLOCK, PRIZE_RECIPIENTS],
+    },
+    {
+      provide: LifecycleReconciler,
+      useFactory: (progress: Progressions, prizes: Prizes) =>
+        new LifecycleReconciler(progress, prizes),
+      inject: [PROGRESSIONS, PRIZES],
+    },
     {
       provide: REGISTRATIONS,
       useFactory: (
@@ -318,9 +508,17 @@ export const INTERNAL_CALLERS: readonly string[] = []
         store: EncounterAdminStore,
         clock: ClockPort,
         brackets: Brackets,
+        acceptance: MatchAcceptance,
       ): EncounterAdministration =>
-        new EncounterAdministration(repository, source, combat, commands, store, clock, (id) =>
-          brackets.view(id),
+        new EncounterAdministration(
+          repository,
+          source,
+          combat,
+          commands,
+          store,
+          clock,
+          (id) => brackets.view(id),
+          (id, encounterId) => acceptance.guard(id, encounterId),
         ),
       inject: [
         TOURNAMENT_ENCOUNTER_REPOSITORY,
@@ -330,6 +528,7 @@ export const INTERNAL_CALLERS: readonly string[] = []
         ENCOUNTER_ADMIN_STORE,
         CLOCK,
         BRACKETS,
+        MATCH_ACCEPTANCE,
       ],
     },
     {

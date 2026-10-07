@@ -4,6 +4,7 @@ import type { RegistrationRepository } from '../../../application/ports/Registra
 import {
   RegistrationError,
   CALENDAR_DISTANCE_MS,
+  teamMemberIds,
   type RegistrationTournament,
   type RegistrationTeam,
 } from '../../../domain/registration'
@@ -59,6 +60,11 @@ export class PostgresRegistrationRepository implements RegistrationRepository {
         .insertInto('tournaments')
         .values({
           id: t.id,
+          acceptance_policy: t.acceptancePolicy ?? null,
+          round_windows: JSON.stringify(t.roundWindows ?? []),
+          tournament_mode: t.tournamentMode ?? 'DUO',
+          team_size: t.teamSize ?? 2,
+          contract_version: t.contractVersion ?? 'torneos-hu77-84-78-hu83-v2.0.0',
           name: t.name,
           entry_policy: JSON.stringify(t.entryPolicy),
           entry_fee: t.entryFee,
@@ -98,6 +104,11 @@ export class PostgresRegistrationRepository implements RegistrationRepository {
       .execute()
     return {
       id,
+      acceptancePolicy: t.acceptance_policy,
+      roundWindows: t.round_windows,
+      tournamentMode: t.tournament_mode,
+      teamSize: t.team_size,
+      contractVersion: t.contract_version,
       name: t.name,
       entryPolicy: t.entry_policy,
       entryFee: t.entry_fee === null ? null : Number(t.entry_fee),
@@ -194,7 +205,7 @@ export class PostgresRegistrationRepository implements RegistrationRepository {
     await tx
       .insertInto('registration_members')
       .values(
-        [team.ownerId, team.companionId].map((player_id) => ({
+        teamMemberIds(team).map((player_id) => ({
           tournament_id: id,
           team_id: team.id,
           player_id,

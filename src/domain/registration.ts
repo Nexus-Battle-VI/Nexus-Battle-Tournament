@@ -1,6 +1,18 @@
 import type { PublishedBracket } from './bracket'
+import type { RoundWindow, ACCEPTANCE_POLICY } from './match-acceptance'
 
 export const CONTRACT_VERSION = 'torneos-hu77-84-78-hu83-v2.0.0'
+export const MODALITIES_CONTRACT_VERSION = 'torneos-v3.0.0'
+export type TournamentMode = 'SOLO' | 'DUO' | 'TRIO'
+export type TeamSize = 1 | 2 | 3
+export const modeSize = (mode: TournamentMode): TeamSize =>
+  mode === 'SOLO' ? 1 : mode === 'DUO' ? 2 : 3
+export interface RegistrationMember {
+  subject: string
+  position: number
+  consentAt: string | null
+  consentVersion: string | null
+}
 export const CALENDAR_DISTANCE_MS = 91 * 24 * 60 * 60 * 1000
 export type PaymentMethod = 'CREDITS' | 'SIMULATED_MONEY'
 export interface CreditMethod {
@@ -37,7 +49,7 @@ export interface RegistrationReceipt {
   kind: 'TEAM_REGISTRATION'
   tournamentId: string
   teamId: string
-  memberIds: [string, string]
+  memberIds: string[]
   registeredAt: string
   status: 'REGISTERED'
 }
@@ -69,7 +81,8 @@ export interface RegistrationTeam {
   name: string
   avatar: TeamAvatar
   ownerId: string
-  companionId: string
+  companionId: string | null
+  members?: RegistrationMember[]
   status: TeamStatus
   createdAt: string
   ownerConsentAt: string
@@ -98,6 +111,11 @@ export interface RegistrationOperation {
   }
 }
 export interface RegistrationTournament {
+  acceptancePolicy?: typeof ACCEPTANCE_POLICY | null
+  roundWindows?: RoundWindow[]
+  tournamentMode?: TournamentMode
+  teamSize?: TeamSize
+  contractVersion?: string
   id: string
   name: string
   entryPolicy: EntryPolicy
@@ -128,8 +146,44 @@ export const requireRule: (
 }
 export const registrationOpen = (t: RegistrationTournament, now: Date): boolean =>
   t.bracket === null && new Date(t.opensAt) <= now && now < new Date(t.closesAt)
+/** Compatibilidad de datos: nunca cambia recibos ni huellas de operaciones v2. */
+export const teamMembers = (team: RegistrationTeam): RegistrationMember[] =>
+  team.members ?? [
+    {
+      subject: team.ownerId,
+      position: 0,
+      consentAt: team.ownerConsentAt,
+      consentVersion: team.ownerConsentVersion,
+    },
+    ...(team.companionId === null
+      ? []
+      : [
+          {
+            subject: team.companionId,
+            position: 1,
+            consentAt: team.consentAt,
+            consentVersion: team.consentVersion,
+          },
+        ]),
+  ]
+export const teamMemberIds = (team: RegistrationTeam): string[] =>
+  teamMembers(team).map((member) => member.subject)
+export const teamConsented = (team: RegistrationTeam, size: number): boolean => {
+  const members = teamMembers(team)
+  return (
+    members.length === size &&
+    new Set(members.map((m) => m.subject)).size === size &&
+    members.every(
+      (m, i) =>
+        m.position === i &&
+        m.subject.trim().length > 0 &&
+        m.consentAt !== null &&
+        ['team-registration-v2', 'team-registration-v3'].includes(m.consentVersion ?? ''),
+    )
+  )
+}
 export const memberOf = (team: RegistrationTeam, subject: string): boolean =>
-  team.ownerId === subject || team.companionId === subject
+  teamMemberIds(team).includes(subject)
 export const validateOperation = (id: string): void => {
   requireRule(
     typeof id === 'string' && id.trim().length > 0 && id.length <= 100,
@@ -227,6 +281,12 @@ export const entryFeeProjection = (policy: EntryPolicy): number | null =>
     ? 0
     : (policy.methods.find((m): m is CreditMethod => m.method === 'CREDITS')?.amount ?? null)
 export const publicTournament = (t: RegistrationTournament, now: Date) => ({
+  acceptancePolicy: t.acceptancePolicy ?? null,
+  roundSchedule: t.roundWindows ?? [],
+  serverNow: now.toISOString(),
+  contractVersion: t.contractVersion ?? CONTRACT_VERSION,
+  tournamentMode: t.tournamentMode ?? 'DUO',
+  teamSize: t.teamSize ?? 2,
   id: t.id,
   name: t.name,
   entryPolicy: t.entryPolicy,
@@ -243,7 +303,8 @@ export const publicTeam = (tournamentId: string, team: RegistrationTeam) => ({
   name: team.name,
   avatar: team.avatar,
   ownerId: team.ownerId,
-  companionId: team.companionId,
+  companionId: teamMemberIds(team).length === 2 ? (teamMemberIds(team)[1] ?? null) : null,
+  members: teamMembers(team),
   status: team.status,
   createdAt: team.createdAt,
   consentAt: team.consentAt,

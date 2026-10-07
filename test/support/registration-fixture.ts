@@ -7,7 +7,12 @@ import type {
   EntryCharge,
   EntryChargeResult,
 } from '../../src/application/ports/RegistrationPorts'
-import { RegistrationError, normalizeName, type EntryPolicy } from '../../src/domain/registration'
+import {
+  RegistrationError,
+  normalizeName,
+  type EntryPolicy,
+  type TournamentMode,
+} from '../../src/domain/registration'
 import { InMemoryRegistrationRepository } from '../../src/adapters/outbound/persistence/InMemoryRegistrationRepository'
 import { InMemoryTournamentEncounterRepository } from '../../src/adapters/outbound/persistence/InMemoryTournamentEncounterRepository'
 import { SimulatedEntryGateway } from '../../src/adapters/outbound/payment/SimulatedEntryGateway'
@@ -109,9 +114,10 @@ export const fixture = (
   const simulator = new SimulatedEntryGateway()
   const registrations = new Registrations(repo, accounts, wallet, clock, simulator)
   const brackets = new Brackets(repo, clock)
-  const create = () =>
+  const create = (tournamentMode?: TournamentMode) =>
     registrations.create('admin', {
       operationId: 'create',
+      ...(tournamentMode === undefined ? {} : { tournamentMode }),
       name: 'Torneo de prueba',
       entryPolicy: policy,
       opensAt: '2026-10-01T00:00:00Z',

@@ -1,5 +1,6 @@
 import type { TournamentEncounter } from './entities/TournamentEncounter'
 import { DomainError } from './errors/DomainError'
+import { sameJson } from './json'
 /** Una proyección tardía no puede revertir un cierre ni un cursor ya archivados. */
 export const mergeArchivedEncounter = (
   current: TournamentEncounter | null,
@@ -17,6 +18,12 @@ export const mergeArchivedEncounter = (
   )
     throw new DomainError('La proyección intenta cambiar la identidad archivada.')
   const terminal = current.status === 'FINISHED'
+  for (const field of ['bracketTrack', 'tournamentMode', 'teamSize', 'acceptancePolicy'] as const) {
+    const prior = current.bracketMetadata?.[field],
+      next = incoming.bracketMetadata?.[field]
+    if (prior !== undefined && next !== undefined && prior !== next)
+      throw new DomainError('La proyección intenta cambiar la configuración archivada.')
+  }
   const status = terminal
     ? 'FINISHED'
     : current.status === 'IN_PROGRESS' &&
@@ -29,6 +36,12 @@ export const mergeArchivedEncounter = (
     incoming.lastSyncedSeq >= current.lastSyncedSeq
       ? (incoming.bracketMetadata ?? current.bracketMetadata)
       : (current.bracketMetadata ?? incoming.bracketMetadata)
+  const registeredTeams = metadata?.registeredTeams.map((team, index) => {
+    const prior = current.bracketMetadata?.registeredTeams[index]
+    if (prior !== undefined && prior !== null && team !== null && !sameJson(prior, team))
+      throw new DomainError('La proyección intenta cambiar un equipo ya resuelto.')
+    return prior ?? team
+  })
   return {
     ...incoming,
     status,
@@ -45,13 +58,21 @@ export const mergeArchivedEncounter = (
       : {
           bracketMetadata: {
             ...metadata,
-            registeredTeams: current.bracketMetadata?.registeredTeams ?? metadata.registeredTeams,
+            bracketTrack: current.bracketMetadata?.bracketTrack ?? metadata.bracketTrack,
+            tournamentMode: current.bracketMetadata?.tournamentMode ?? metadata.tournamentMode,
+            teamSize: current.bracketMetadata?.teamSize ?? metadata.teamSize,
+            acceptancePolicy:
+              current.bracketMetadata?.acceptancePolicy ?? metadata.acceptancePolicy,
+            registeredTeams: registeredTeams ?? metadata.registeredTeams,
             preparationStatus:
               status === 'FINISHED'
                 ? 'FINISHED'
                 : status === 'IN_PROGRESS'
                   ? 'IN_BATTLE'
-                  : metadata.preparationStatus,
+                  : metadata.preparationStatus === 'WAITING_TEAMS' &&
+                      registeredTeams?.every((team) => team !== null)
+                    ? 'TEAMS_RESOLVED'
+                    : metadata.preparationStatus,
           },
         }),
   }

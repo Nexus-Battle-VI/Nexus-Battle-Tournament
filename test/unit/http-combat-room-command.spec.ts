@@ -59,6 +59,61 @@ describe('HttpCombatRoomCommandAdapter (HU-85)', () => {
     expect(urlOf(fetchMock.mock.calls[0])).toContain(`/tournament-rooms/${ROOM}/start`)
   })
 
+  it.each([
+    { mode: 'SOLO', size: 1 },
+    { mode: 'DUO', size: 2 },
+    { mode: 'TRIO', size: 3 },
+  ] as const)(
+    '$mode traduce la modalidad interna, firma el wire real y valida roster completo',
+    async ({ mode, size }) => {
+      const teams = [
+        { teamId: 'a', memberIds: Array.from({ length: size }, (_, i) => 'a' + String(i)) },
+        { teamId: 'b', memberIds: Array.from({ length: size }, (_, i) => 'b' + String(i)) },
+      ] as const
+      const response = {
+        id: ROOM,
+        tournament: { contractVersion: 3, mode, teamSize: size },
+        teams: teams.map((t) => ({
+          label: t.teamId,
+          capacity: size,
+          participants: t.memberIds.map((playerId) => ({
+            kind: 'HUMAN',
+            playerId,
+            heroId: 'hero-' + playerId,
+          })),
+        })),
+      }
+      fetchMock.mockImplementation(() => reply(201, response))
+      await expect(
+        adapter.createRoom({ ...create, tournamentMode: mode, teamSize: size, teams }),
+      ).resolves.toEqual({ roomId: ROOM })
+      const init = fetchMock.mock.calls[0]![1]!,
+        headers = init.headers as Record<string, string>
+      const wire = {
+        operationId: create.operationId,
+        tournamentId: create.tournamentId,
+        encounterId: create.encounterId,
+        mode,
+        teamSize: size,
+        teams,
+      }
+      expect(JSON.parse(init.body as string)).toEqual(wire)
+      expect(headers['x-internal-signature']).toBe(
+        signInternalRequest('secreto', {
+          service: 'tournament',
+          method: 'POST',
+          path: '/api/internal/v1/combat/tournament-rooms',
+          timestamp: headers['x-internal-timestamp'] ?? '',
+          body: wire,
+        }),
+      )
+      response.teams[0]!.participants[0]!.playerId = 'foreign'
+      await expect(
+        adapter.createRoom({ ...create, tournamentMode: mode, teamSize: size, teams }),
+      ).rejects.toMatchObject({ status: 503 })
+    },
+  )
+
   it('traduce 422 con bloqueos y 422 con código sin inventar participantes', async () => {
     fetchMock.mockImplementationOnce(() =>
       reply(422, { message: 'no elegible', blockers: [{ playerId: 'p0' }] }),

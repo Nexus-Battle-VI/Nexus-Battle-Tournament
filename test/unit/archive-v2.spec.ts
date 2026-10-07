@@ -9,6 +9,7 @@ import { mergeArchivedEncounter } from '../../src/domain/archive'
 import { fixture, FREE_POLICY } from '../support/registration-fixture'
 import { CombatRecordReconciler } from '../../src/infrastructure/scheduling/combat-record-reconciler'
 import { RegistrationReconciler } from '../../src/infrastructure/scheduling/registration-reconciler'
+import { modeFixture } from '../support/modalities-fixture'
 const setup = async () => {
   const f = fixture(undefined, FREE_POLICY),
     t = await f.create()
@@ -55,6 +56,39 @@ const setup = async () => {
   return { f, t, seed, record, combat, projector: new ProjectCombatRecord(f.encounters, combat) }
 }
 describe('Archivo compatible: datos de Combat sintéticos explícitos', () => {
+  it('una proyección anterior conserva modalidad/calendario; otra configuración y roster ya resuelto se rechazan', async () => {
+    const f = await modeFixture('TRIO'),
+      b = await f.publish()
+    const current = (await f.encounters.findOne(f.id, b.matches[0]!.encounterId))!
+    const incoming = {
+      ...current,
+      bracketMetadata: {
+        ...current.bracketMetadata!,
+        tournamentMode: undefined,
+        teamSize: undefined,
+        acceptancePolicy: undefined,
+      },
+    }
+    expect(mergeArchivedEncounter(current, incoming).bracketMetadata).toMatchObject({
+      tournamentMode: 'TRIO',
+      teamSize: 3,
+      acceptancePolicy: 'ROUND_ACCEPTANCE_V1',
+    })
+    expect(() =>
+      mergeArchivedEncounter(current, {
+        ...incoming,
+        bracketMetadata: { ...incoming.bracketMetadata, tournamentMode: 'SOLO' },
+      }),
+    ).toThrow('configuración archivada')
+    const changedTeams = [...current.bracketMetadata!.registeredTeams]
+    changedTeams[0] = { ...changedTeams[0]!, memberIds: ['foreign'] }
+    expect(() =>
+      mergeArchivedEncounter(current, {
+        ...incoming,
+        bracketMetadata: { ...incoming.bracketMetadata, registeredTeams: changedTeams },
+      }),
+    ).toThrow('equipo ya resuelto')
+  })
   it('vincula por miembros aunque Combat invierta orden, traduce estado y conserva snapshot', async () => {
     const { f, t, record, projector } = await setup()
     const before = await f.brackets.view(t.id)
