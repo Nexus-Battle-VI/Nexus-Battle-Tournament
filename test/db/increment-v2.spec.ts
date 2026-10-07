@@ -186,7 +186,11 @@ describe('Combinación HU-77/84/78/83 en PostgreSQL real aislado', () => {
     )
     const upgrade = await migrateToLatest(db)
     expect(upgrade.error).toBeUndefined()
-    expect(upgrade.applied).toEqual(['002-tournament-registration', '003-tournament-bracket'])
+    expect(upgrade.applied).toEqual([
+      '002-tournament-registration',
+      '003-tournament-bracket',
+      '004-tournament-admin-actions',
+    ])
     expect(await archive.findOne(original.tournamentId, original.encounterId)).toEqual(original)
     const f = fixture(new PostgresRegistrationRepository(db))
     const source = new PersistedBracketEncounterSource(f.repo),
@@ -209,6 +213,7 @@ describe('Combinación HU-77/84/78/83 en PostgreSQL real aislado', () => {
       '001-tournament-encounters',
       '002-tournament-registration',
       '003-tournament-bracket',
+      '004-tournament-admin-actions',
     ])
   })
   it('conserva registro/consentimientos/recibos al reconstruir adaptadores', async () => {
