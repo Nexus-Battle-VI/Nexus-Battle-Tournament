@@ -103,11 +103,17 @@ Cada primera aceptación persiste un intento con JWT/roster, operación y hora v
 antes de confirmar el recibo en otra transacción por justa. La confirmación elimina
 los intentos pendientes de ese sujeto; un rechazo de negocio elimina el intento propio.
 Si una escritura falla o el proceso termina entre ambas transacciones, el intento
-queda durable. Un intento autorizado sin recibo al cierre produce
+queda durable. PENDING significa desenlace aún desconocido: al deadline el cierre
+espera con ACCEPTANCE_PENDING/RESOLUTION_PENDING y no fija una decisión irreversible.
+Un rechazo de negocio, incluido 409 por deadline, limpia su intento y ese motivo
+temporal; la siguiente reconciliación aplica los conteos. Un error técnico confirmado
+guarda failedAt y, si aún falta el recibo al cierre, produce BLOCKED_DELAY con
 ACCEPTANCE_SERVICE_INTERRUPTED: conserva recibos, sin ganador, sorteo ni nueva ventana.
+Si SQL no permite guardar failedAt, el PENDING anterior mantiene el cierre esperando.
 Un retry confirmado antes del deadline resuelve el pendiente. La evidencia cubre
 fallo de escritura inyectado y lectura desde otro pool; no una caída de infraestructura
-real. Fallar antes de persistir el intento no deja esta evidencia: detectar una caída
+real, y la carrera de un intento en curso a 1 ms del deadline entre dos pools.
+Fallar antes de persistir el intento no deja esta evidencia: detectar una caída
 completa del servicio/base durante OPEN requiere telemetría operativa durable externa.
 No se afirma detectar esa caída mediante el reloj o latidos del worker.
 Una ventana íntegra sin activar produce WINDOW_MISSED. Si los resultados

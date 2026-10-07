@@ -222,6 +222,71 @@ describe('HU-85 v3: reloj, aceptación individual, decisión durable y avance po
       resolution: { acceptedCounts: [1, 0], rule: 'MORE_ACCEPTANCES' },
     })
   })
+  it('si también falla conservar el error técnico, el intento durable mantiene el cierre pendiente sin ganador', async () => {
+    const f = await acceptanceFixture(),
+      e = f.e().encounterId
+    f.setOpen()
+    await f.acceptSide('E1', 0, 3)
+    const write = f.store.change.bind(f.store)
+    jest
+      .spyOn(f.store, 'change')
+      .mockImplementationOnce(write)
+      .mockRejectedValueOnce(new Error('Base no disponible'))
+      .mockRejectedValueOnce(new Error('Base aún no disponible'))
+    await expect(
+      f.acceptance.accept(f.id, e, f.b.seeds[1]!.memberIds[0]!, 'interrupted'),
+    ).rejects.toThrow('Base no disponible')
+    f.setClose()
+    await f.worker().run(f.id, e)
+    expect(await f.store.read(f.id, e)).toMatchObject({
+      phase: 'OPEN',
+      decision: null,
+      resolution: null,
+      blocker: { code: 'ACCEPTANCE_PENDING' },
+      pendingAcceptances: [{ failedAt: null }],
+    })
+    expect(f.random.bit).not.toHaveBeenCalled()
+    expect((await f.lifecycle.read(f.id)).results).toEqual([])
+  })
+  it('un intento a 1 ms del cierre que termina en 409 no deja un bloqueo de servicio falso', async () => {
+    const f = await acceptanceFixture(),
+      e = f.e().encounterId
+    f.setOpen()
+    await f.acceptSide('E1', 0, 3)
+    f.setNow(new Date(new Date(f.window().acceptanceClosesAt).getTime() - 1).toISOString())
+    const write = f.store.change.bind(f.store)
+    jest
+      .spyOn(f.store, 'change')
+      .mockImplementationOnce(write)
+      .mockImplementationOnce(async (initial, action) => {
+        f.setClose()
+        await f.worker().run(f.id, e)
+        expect(await f.store.read(f.id, e)).toMatchObject({
+          phase: 'OPEN',
+          decision: null,
+          resolution: null,
+          blocker: { code: 'ACCEPTANCE_PENDING' },
+        })
+        expect((await f.acceptance.view(f.id, e))!.operationalStatus).toBe('RESOLUTION_PENDING')
+        return write(initial, action)
+      })
+    await expect(
+      f.acceptance.accept(f.id, e, f.b.seeds[1]!.memberIds[0]!, 'boundary'),
+    ).rejects.toMatchObject({ code: 'ACCEPTANCE_CLOSED' })
+    expect(await f.store.read(f.id, e)).toMatchObject({
+      phase: 'OPEN',
+      blocker: null,
+      pendingAcceptances: [],
+    })
+    await f.worker().run(f.id, e)
+    expect(await f.store.read(f.id, e)).toMatchObject({
+      phase: 'CLOSED',
+      decision: 'TOURNAMENT',
+      blocker: null,
+      resolution: { rule: 'COMPLETE_TEAM', acceptedCounts: [3, 0] },
+    })
+    expect(f.random.bit).not.toHaveBeenCalled()
+  })
   it('NO_WINNER del registro validado conserva resolución PLAYED y no se sortea como ausencia', async () => {
     const f = await acceptanceFixture()
     const e = matchFixture(f.b, 'E1', [], null)

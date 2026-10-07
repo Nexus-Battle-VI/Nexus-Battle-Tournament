@@ -31,6 +31,7 @@ export interface PendingAcceptance {
   subject: string
   operationId: string
   requestedAt: string
+  failedAt: string | null
 }
 export interface ResolvedTeam {
   teamId: string
@@ -104,20 +105,25 @@ export const closeAcceptance = (
   )
   requireRule(s.roster !== null, 'PARTICIPANTS_UNRESOLVED', 'Faltan equipos resueltos.', 409)
   const counts = acceptanceCounts(s)
-  const unresolved = s.pendingAcceptances.find(
+  const unresolved = s.pendingAcceptances.filter(
     (request) => !s.acceptances.some((a) => a.subject === request.subject),
   )
-  if (unresolved !== undefined) {
-    s.phase = 'BLOCKED'
+  const failed = unresolved.find((request) => request.failedAt !== null)
+  const pending = failed ?? unresolved[0]
+  if (pending !== undefined) {
+    if (failed !== undefined) s.phase = 'BLOCKED'
     s.blocker = {
-      code: 'ACCEPTANCE_SERVICE_INTERRUPTED',
+      code: failed === undefined ? 'ACCEPTANCE_PENDING' : 'ACCEPTANCE_SERVICE_INTERRUPTED',
       message:
-        'Un intento autorizado de aceptación quedó sin confirmar al cierre. Requiere revisión operativa, sin inferir ausencia.',
-      since: unresolved.requestedAt,
+        failed === undefined
+          ? 'Hay un intento autorizado aún sin confirmar. El cierre espera su desenlace, sin inferir una ausencia.'
+          : 'Falló un intento autorizado de aceptación y sigue sin recibo al cierre. Requiere revisión operativa, sin inferir ausencia.',
+      since: pending.failedAt ?? pending.requestedAt,
       responsible: 'TOURNAMENT_OPERATIONS',
     }
     return
   }
+  if (s.blocker?.code === 'ACCEPTANCE_PENDING') s.blocker = null
   s.phase = 'CLOSED'
   s.decidedAt = now.toISOString()
   if (counts.every((c) => c === s.teamSize)) {

@@ -179,6 +179,7 @@ export class MatchAcceptance {
         subject,
         operationId,
         requestedAt: now.toISOString(),
+        failedAt: null,
       })
       return null
     })
@@ -227,10 +228,20 @@ export class MatchAcceptance {
         return acceptanceReceipt(receipt, s.window, accepted !== undefined)
       })
     } catch (error: unknown) {
-      if (error instanceof RegistrationError && error.status < 500)
+      try {
         await this.store.change(initial, (s) => {
-          s.pendingAcceptances = s.pendingAcceptances.filter((r) => r.requestId !== requestId)
+          if (error instanceof RegistrationError && error.status < 500) {
+            s.pendingAcceptances = s.pendingAcceptances.filter((r) => r.requestId !== requestId)
+            if (s.pendingAcceptances.length === 0 && s.blocker?.code === 'ACCEPTANCE_PENDING')
+              s.blocker = null
+          } else {
+            const request = s.pendingAcceptances.find((r) => r.requestId === requestId)
+            if (request?.failedAt === null) request.failedAt = this.clock.now().toISOString()
+          }
         })
+      } catch {
+        // Si SQL continúa caído, el intento ya durable mantiene el cierre pendiente.
+      }
       throw error
     }
   }
@@ -298,14 +309,16 @@ export class MatchAcceptance {
       operationalStatus:
         resolution !== null
           ? 'FINISHED'
-          : s.blocker !== null
-            ? 'DEPENDENCY_ERROR'
-            : s.combatIntent?.phase === 'STARTED'
-              ? 'IN_BATTLE'
-              : (s.combatIntent?.phase ??
-                (s.phase === 'CLOSED' || (s.phase === 'OPEN' && deadlinePassed)
-                  ? 'RESOLUTION_PENDING'
-                  : 'IDLE')),
+          : s.blocker?.code === 'ACCEPTANCE_PENDING'
+            ? 'RESOLUTION_PENDING'
+            : s.blocker !== null
+              ? 'DEPENDENCY_ERROR'
+              : s.combatIntent?.phase === 'STARTED'
+                ? 'IN_BATTLE'
+                : (s.combatIntent?.phase ??
+                  (s.phase === 'CLOSED' || (s.phase === 'OPEN' && deadlinePassed)
+                    ? 'RESOLUTION_PENDING'
+                    : 'IDLE')),
       acceptedCounts: acceptanceCounts(s),
       myAcceptance: own === undefined ? null : acceptanceReceipt(own, s.window, true),
       blockReason:

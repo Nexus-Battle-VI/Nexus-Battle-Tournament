@@ -229,6 +229,40 @@ describe('Aceptación, ausencias y worker con PostgreSQL real y dos pools', () =
     expect(other.random.bit).toHaveBeenCalledTimes(1)
     expect(f.commands.createRoom).not.toHaveBeenCalled()
   })
+  it('dos pools esperan un intento en curso al deadline y descartan su 409 sin bloqueo permanente', async () => {
+    const f = await setup(),
+      other = reborn(f),
+      e = f.e().encounterId
+    f.setOpen()
+    await f.acceptSide('E1', 0, 3)
+    f.setNow(new Date(new Date(f.window().acceptanceClosesAt).getTime() - 1).toISOString())
+    const write = f.store.change.bind(f.store)
+    jest
+      .spyOn(f.store, 'change')
+      .mockImplementationOnce(write)
+      .mockImplementationOnce(async (initial, action) => {
+        f.setClose()
+        await other.worker.run(f.id, e)
+        expect(await other.store.read(f.id, e)).toMatchObject({
+          phase: 'OPEN',
+          decision: null,
+          blocker: { code: 'ACCEPTANCE_PENDING' },
+        })
+        return write(initial, action)
+      })
+    await expect(
+      f.acceptance.accept(f.id, e, f.b.seeds[1]!.memberIds[0]!, 'boundary'),
+    ).rejects.toMatchObject({ code: 'ACCEPTANCE_CLOSED' })
+    await reborn(f).worker.run(f.id, e)
+    expect(await other.store.read(f.id, e)).toMatchObject({
+      phase: 'CLOSED',
+      blocker: null,
+      pendingAcceptances: [],
+      resolution: { rule: 'COMPLETE_TEAM', acceptedCounts: [3, 0] },
+    })
+    expect(await f.store.resolutions(f.id)).toHaveLength(1)
+    expect(other.random.bit).not.toHaveBeenCalled()
+  })
   it('Final por ausencia conserva campeón TRIO, 14 victorias únicas y derechos pendientes recuperables', async () => {
     const f = await setup()
     for (let round = 1; round <= 6; round++) {

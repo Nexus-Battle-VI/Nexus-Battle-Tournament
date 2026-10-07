@@ -139,7 +139,8 @@ BEGIN
  FOR request IN SELECT value FROM jsonb_array_elements(s->'pendingAcceptances') LOOP
   IF NOT COALESCE(length(request->>'requestId')>0 AND length(request->>'operationId')>0 AND
     (request->>'requestedAt')::timestamptz>=(w->>'acceptanceOpensAt')::timestamptz AND
-    (request->>'requestedAt')::timestamptz<(w->>'acceptanceClosesAt')::timestamptz,false) OR NOT EXISTS(
+    (request->>'requestedAt')::timestamptz<(w->>'acceptanceClosesAt')::timestamptz AND
+    (request->'failedAt'='null'::jsonb OR (request->>'failedAt')::timestamptz>=(request->>'requestedAt')::timestamptz),false) OR NOT EXISTS(
     SELECT 1 FROM jsonb_array_elements(s->'roster') x WHERE x->'memberIds' ? (request->>'subject')) THEN
    RAISE EXCEPTION 'INVALID_PENDING_ACCEPTANCE' USING ERRCODE='23514'; END IF;
  END LOOP;
