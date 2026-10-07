@@ -1,0 +1,154 @@
+{
+  "playerId": "__PLAYER__",
+  "heroId": "__HERO__",
+  "reference": "guerrero-armas",
+  "subtype": "GUERRERO_ARMAS",
+  "name": "Guerrero Armas",
+  "level": 1,
+  "baseStats": {
+    "power": 8,
+    "health": 40,
+    "defense": 8,
+    "attack": 10,
+    "damage": {
+      "mode": "DICE",
+      "count": 1,
+      "sides": 4
+    },
+    "healing": null
+  },
+  "levelStats": {
+    "power": 8,
+    "health": 40,
+    "defense": 8,
+    "attack": 10,
+    "damage": {
+      "mode": "DICE",
+      "count": 1,
+      "sides": 4
+    },
+    "healing": null
+  },
+  "effectiveStats": {
+    "power": 8,
+    "health": 40,
+    "defense": 8,
+    "attack": 13,
+    "damage": {
+      "mode": "DICE",
+      "count": 1,
+      "sides": 4
+    },
+    "healing": null
+  },
+  "activeEffects": [
+    {
+      "sourceProductId": "6a3f3c2e-2b7e-4d1a-9f0a-1c9e8d7b6a55",
+      "sourceProductReference": "espada-de-dos-manos",
+      "kind": "STAT_MODIFIER",
+      "target": "SELF",
+      "statistic": "ATTACK",
+      "operation": "INCREASE",
+      "magnitude": {
+        "mode": "FIXED",
+        "amount": 3
+      },
+      "hasActivationCondition": false,
+      "appliedToStats": true
+    },
+    {
+      "sourceProductId": "6a3f3c2e-2b7e-4d1a-9f0a-1c9e8d7b6a55",
+      "sourceProductReference": "espada-de-dos-manos",
+      "kind": "STAT_MODIFIER",
+      "target": "SELF",
+      "statistic": "CRITICAL_CHANCE",
+      "operation": "INCREASE",
+      "magnitude": {
+        "mode": "PERCENTAGE",
+        "basisPoints": 300
+      },
+      "hasActivationCondition": false,
+      "appliedToStats": false
+    },
+    {
+      "sourceProductId": "2b1c9e7d-4a3f-4c8e-8d21-7f6a5b4c3d22",
+      "sourceProductReference": "amuleto-de-hierro",
+      "kind": "STAT_MODIFIER",
+      "target": "SELF",
+      "statistic": "DEFENSE",
+      "operation": "INCREASE",
+      "magnitude": {
+        "mode": "FIXED",
+        "amount": 2
+      },
+      "hasActivationCondition": true,
+      "appliedToStats": false
+    },
+    {
+      "sourceProductId": "9d8c7b6a-5e4f-4a3b-9c2d-1e0f9a8b7c66",
+      "sourceProductReference": "daga-envenenada",
+      "kind": "DAMAGE",
+      "target": "OPPONENT",
+      "magnitude": {
+        "mode": "DICE",
+        "count": 1,
+        "sides": 6
+      },
+      "hasActivationCondition": false,
+      "appliedToStats": false
+    }
+  ],
+  "abilities": [
+    {
+      "abilityId": "2e97537a-675c-461a-b902-4fcf369083a8",
+      "reference": "golpe-con-escudo",
+      "name": "Golpe con escudo",
+      "powerCost": {
+        "mode": "FIXED",
+        "amount": 2
+      },
+      "chargeTurns": 1,
+      "effects": [
+        {
+          "kind": "STAT_MODIFIER",
+          "target": "SELF",
+          "statistic": "ATTACK",
+          "operation": "INCREASE",
+          "magnitude": {
+            "mode": "FIXED",
+            "amount": 2
+          },
+          "hasActivationCondition": false
+        }
+      ]
+    },
+    {
+      "abilityId": "6c2bac06-0dc2-4a63-a526-a3adca2200d7",
+      "reference": "mano-de-piedra",
+      "name": "Mano de piedra",
+      "powerCost": {
+        "mode": "FIXED",
+        "amount": 4
+      },
+      "chargeTurns": 1,
+      "effects": [
+        {
+          "kind": "STAT_MODIFIER",
+          "target": "SELF",
+          "statistic": "DEFENSE",
+          "operation": "INCREASE",
+          "magnitude": {
+            "mode": "FIXED",
+            "amount": 12
+          },
+          "durationTurns": 2,
+          "hasActivationCondition": true
+        }
+      ]
+    }
+  ],
+  "ready": true,
+  "blockers": [],
+  "loadoutVersion": 0,
+  "selectedAt": "2026-09-19T12:00:00.000Z"
+}

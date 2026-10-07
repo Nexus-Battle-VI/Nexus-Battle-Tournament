@@ -16,6 +16,9 @@ import { startTestPostgres } from '../support/postgres'
  * el motor y dos instancias del servicio compitiendo por la misma justa. Combat
  * es un doble de prueba (ver `fake-combat.ts`).
  */
+// Docker en Windows puede tardar al levantar cada contenedor: margen amplio contra falsos timeouts.
+jest.setTimeout(240_000)
+
 describe('HU-85 en PostgreSQL real aislado', () => {
   let runtime: Awaited<ReturnType<typeof startTestPostgres>>
   let db: Kysely<Database>
@@ -24,7 +27,7 @@ describe('HU-85 en PostgreSQL real aislado', () => {
     db = createDatabase({ connectionString: runtime.connectionString })
     const result = await migrateToLatest(db)
     if (result.error !== undefined) throw new Error('Falló la migración.')
-  }, 120000)
+  }, 240000)
   afterEach(async () => {
     await db.destroy()
     await runtime.stop()
