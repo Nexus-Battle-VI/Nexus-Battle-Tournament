@@ -77,6 +77,28 @@ describe('API combinada v2: JWT controlado, roles, recibos y HU-83', () => {
       .post('/api/v1/tournaments/' + url)
       .set('Authorization', 'Bearer ' + token)
       .send(body)
+
+  it('solo un administrador crea el piloto gratuito; isTest no permite saltar autorización ni usar pagos', async () => {
+    const pilot = {
+      operationId: 'pilot-http',
+      name: 'Piloto',
+      isTest: true,
+      tournamentMode: 'SOLO',
+      entryPolicy: FREE_POLICY,
+      opensAt: '2026-10-01T00:00:00Z',
+      closesAt: '2026-10-10T00:00:00Z',
+      startsAt: '2026-10-12T00:00:00Z',
+    }
+    await send('admin', pilot, 'p0').expect(403)
+    const created = await send('admin', pilot, 'admin').expect(200)
+    expect(created.body).toMatchObject({ isTest: true, entryFee: 0, tournamentMode: 'SOLO' })
+    await send(
+      'admin',
+      { ...pilot, operationId: 'bad-paid-pilot', entryPolicy: MIXED_POLICY },
+      'admin',
+    ).expect(422)
+    await send('admin', { ...pilot, operationId: 'bad-type', isTest: 'true' }, 'admin').expect(400)
+  })
   const get = (url: string, token = 'p0') =>
     request(app.getHttpServer())
       .get('/api/v1/tournaments/' + url)

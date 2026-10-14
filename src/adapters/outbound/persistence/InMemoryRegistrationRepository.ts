@@ -29,10 +29,12 @@ export class InMemoryRegistrationRepository implements RegistrationRepository {
       return this.read(existing.tournamentId)
     }
     if (
+      t.isTest !== true &&
       [...this.tournaments.values()].some(
         (x) =>
+          x.isTest !== true &&
           Math.abs(new Date(x.startsAt).getTime() - new Date(t.startsAt).getTime()) <
-          CALENDAR_DISTANCE_MS,
+            CALENDAR_DISTANCE_MS,
       )
     )
       return Promise.reject(
@@ -62,8 +64,15 @@ export class InMemoryRegistrationRepository implements RegistrationRepository {
     await prior
     try {
       const t = await this.read(id)
+      const previousIsTest = t.isTest === true
       const previousBracket = structuredClone(t.bracket)
       const result = action(t)
+      if ((t.isTest === true) !== previousIsTest)
+        throw new RegistrationError(
+          'IMMUTABLE_TOURNAMENT_CONFIGURATION',
+          'El tipo del torneo es inmutable.',
+          409,
+        )
       if (previousBracket !== null && !sameJson(previousBracket, t.bracket))
         throw new RegistrationError(
           'IMMUTABLE_BRACKET',

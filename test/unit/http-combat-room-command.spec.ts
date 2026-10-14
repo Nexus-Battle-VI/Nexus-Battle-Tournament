@@ -59,6 +59,28 @@ describe('HttpCombatRoomCommandAdapter (HU-85)', () => {
     expect(urlOf(fetchMock.mock.calls[0])).toContain(`/tournament-rooms/${ROOM}/start`)
   })
 
+  it('firma el modo de prueba y rechaza un Combat que no confirma la supresión de recompensas', async () => {
+    const input = { ...create, tournamentMode: 'DUO' as const, teamSize: 2 as const, isTest: true }
+    const response = {
+      id: ROOM,
+      tournament: { contractVersion: 3, mode: 'DUO', teamSize: 2, isTest: true },
+      teams: create.teams.map((team) => ({
+        label: team.teamId,
+        capacity: 2,
+        participants: team.memberIds.map((playerId) => ({
+          kind: 'HUMAN',
+          playerId,
+          heroId: 'hero-' + playerId,
+        })),
+      })),
+    }
+    fetchMock.mockImplementation(() => reply(201, response))
+    await expect(adapter.createRoom(input)).resolves.toEqual({ roomId: ROOM })
+    expect(JSON.parse(fetchMock.mock.calls[0]![1]!.body as string).isTest).toBe(true)
+    response.tournament.isTest = false
+    await expect(adapter.createRoom(input)).rejects.toMatchObject({ code: 'SERVICE_UNAVAILABLE' })
+  })
+
   it.each([
     { mode: 'SOLO', size: 1 },
     { mode: 'DUO', size: 2 },

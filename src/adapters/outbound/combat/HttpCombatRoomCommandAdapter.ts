@@ -30,6 +30,7 @@ export class HttpCombatRoomCommandAdapter implements CombatRoomCommandPort {
             operationId: input.operationId,
             tournamentId: input.tournamentId,
             encounterId: input.encounterId,
+            ...(input.isTest === true ? { isTest: true } : {}),
             mode: input.tournamentMode,
             teamSize: input.teamSize,
             teams: input.teams,
@@ -42,6 +43,12 @@ export class HttpCombatRoomCommandAdapter implements CombatRoomCommandPort {
       503,
     )
     if (input.tournamentMode !== undefined) {
+      requireRule(
+        input.isTest !== true || (record(data.tournament) && data.tournament.isTest === true),
+        'SERVICE_UNAVAILABLE',
+        'Combat no confirmó que esta batalla sea de prueba.',
+        503,
+      )
       requireRule(
         Array.isArray(data.teams) &&
           data.teams.length === 2 &&

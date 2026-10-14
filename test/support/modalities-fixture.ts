@@ -5,9 +5,10 @@ export const modeFixture = async (
   mode: TournamentMode = 'TRIO',
   repo?: RegistrationRepository,
   policy: EntryPolicy = FREE_POLICY,
+  isTest = false,
 ) => {
   const f = fixture(repo, policy),
-    t = await f.create(mode)
+    t = await f.create(mode, isTest)
   const register = async (n: number) => {
     const owner = `p${String(n)}_0`
     const invitedMemberIds = Array.from(

@@ -111,6 +111,8 @@ export interface RegistrationOperation {
   }
 }
 export interface RegistrationTournament {
+  /** Piloto gratuito, fuera del calendario oficial y sin recompensas. */
+  isTest?: boolean
   acceptancePolicy?: typeof ACCEPTANCE_POLICY | null
   roundWindows?: RoundWindow[]
   tournamentMode?: TournamentMode
@@ -281,6 +283,7 @@ export const entryFeeProjection = (policy: EntryPolicy): number | null =>
     ? 0
     : (policy.methods.find((m): m is CreditMethod => m.method === 'CREDITS')?.amount ?? null)
 export const publicTournament = (t: RegistrationTournament, now: Date) => ({
+  isTest: t.isTest === true,
   acceptancePolicy: t.acceptancePolicy ?? null,
   roundSchedule: t.roundWindows ?? [],
   serverNow: now.toISOString(),

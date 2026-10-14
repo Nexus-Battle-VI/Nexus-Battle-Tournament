@@ -32,7 +32,14 @@ export class Prizes {
     }
   }
   async approve(id: string, actor: string, raw: unknown) {
-    const c = validatePrizeConfiguration(raw, (await this.tournaments.read(id)).teamSize ?? 2)
+    const tournament = await this.tournaments.read(id)
+    requireRule(
+      tournament.isTest !== true,
+      'TEST_TOURNAMENT_NO_PRIZES',
+      'Los torneos de prueba no entregan premios.',
+      409,
+    )
+    const c = validatePrizeConfiguration(raw, tournament.teamSize ?? 2)
     requireRule(
       (await this.tournaments.read(id)).bracket != null,
       'BRACKET_REQUIRED',
@@ -55,7 +62,12 @@ export class Prizes {
     return this.view(id)
   }
   async deliver(id: string, actor: string) {
-    await this.tournaments.read(id)
+    requireRule(
+      (await this.tournaments.read(id)).isTest !== true,
+      'TEST_TOURNAMENT_NO_PRIZES',
+      'Los torneos de prueba no entregan premios.',
+      409,
+    )
     const delivery = await this.repository.change(id, (s) => {
       requireRule(
         s.champion !== null,
