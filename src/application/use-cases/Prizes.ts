@@ -5,7 +5,7 @@ import {
   validatePrizeConfiguration,
   validatePrizeReceipt,
 } from '../../domain/prize'
-import { RegistrationError, requireRule } from '../../domain/registration'
+import { RegistrationError, requireActiveTournament, requireRule } from '../../domain/registration'
 import type { ClockPort } from '../ports/ClockPort'
 import type { RegistrationRepository } from '../ports/RegistrationPorts'
 import type {
@@ -33,6 +33,7 @@ export class Prizes {
   }
   async approve(id: string, actor: string, raw: unknown) {
     const tournament = await this.tournaments.read(id)
+    requireActiveTournament(tournament)
     requireRule(
       tournament.isTest !== true,
       'TEST_TOURNAMENT_NO_PRIZES',
@@ -62,6 +63,7 @@ export class Prizes {
     return this.view(id)
   }
   async deliver(id: string, actor: string) {
+    requireActiveTournament(await this.tournaments.read(id))
     requireRule(
       (await this.tournaments.read(id)).isTest !== true,
       'TEST_TOURNAMENT_NO_PRIZES',

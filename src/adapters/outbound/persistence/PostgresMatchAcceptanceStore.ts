@@ -22,6 +22,13 @@ export class PostgresMatchAcceptanceStore implements MatchAcceptanceStore {
       const id = initial.tournamentId,
         encounterId = initial.encounterId,
         key = JSON.stringify(['acceptance', id, encounterId])
+      const tournament = await tx
+        .selectFrom('tournaments')
+        .select('closure')
+        .where('id', '=', id)
+        .forUpdate()
+        .executeTakeFirstOrThrow()
+      requireRule(tournament.closure === null, 'TOURNAMENT_CLOSED', 'El torneo fue cerrado.', 409)
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${key},0))`.execute(tx)
       await tx
         .insertInto('tournament_match_acceptance')

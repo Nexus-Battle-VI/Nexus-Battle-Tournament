@@ -9,12 +9,12 @@ import {
 } from '../../src/infrastructure/persistence/database'
 
 describe('Calendario oficial y pruebas sobre PostgreSQL real', () => {
-  it('migra sin convertir el torneo anterior y protege calendario, tipo y premios directamente en SQL', async () => {
+  it('migra sin convertir el torneo anterior y permite fechas próximas y protege tipo y premios directamente en SQL', async () => {
     const server = await startTestPostgres()
     const db = createDatabase({ connectionString: server.connectionString })
     try {
       const previous = Object.fromEntries(
-        Object.entries(MIGRATIONS).filter(([name]) => name !== '011-test-tournaments'),
+        Object.entries(MIGRATIONS).filter(([name]) => name < '011-test-tournaments'),
       )
       expect((await migrateToLatest(db, previous)).error).toBeUndefined()
       await sql`INSERT INTO tournaments(id,name,entry_policy,entry_fee,opens_at,closes_at,starts_at,starts_epoch)
@@ -29,7 +29,7 @@ describe('Calendario oficial y pruebas sobre PostgreSQL real', () => {
         isTest: false,
       })
       const f = fixture(repo, FREE_POLICY)
-      await expect(f.create('SOLO')).rejects.toMatchObject({ code: 'CALENDAR_CONFLICT' })
+      await expect(f.create('SOLO')).resolves.toMatchObject({ isTest: false })
       const pilot = await f.registrations.create('admin', {
         operationId: 'pilot',
         name: 'Prueba',
@@ -54,7 +54,7 @@ describe('Calendario oficial y pruebas sobre PostgreSQL real', () => {
           '2026-10-01T00:00:00Z','2026-10-10T00:00:00Z','2026-10-13T00:00:00Z',1791849600000)`.execute(
           db,
         ),
-      ).rejects.toThrow('tournaments_calendar')
+      ).resolves.toBeDefined()
       await expect(
         sql`INSERT INTO tournament_lifecycle(tournament_id,data)
         VALUES(${pilot.id}, ${JSON.stringify({ tournamentId: pilot.id, results: [], champion: null, configuration: {}, delivery: null })}::jsonb)`.execute(

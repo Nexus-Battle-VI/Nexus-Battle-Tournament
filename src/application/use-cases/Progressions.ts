@@ -4,7 +4,8 @@ import {
   declareChampion,
   projectBracket,
 } from '../../domain/progression'
-import { requireRule } from '../../domain/registration'
+import { requireRule, requireActiveTournament } from '../../domain/registration'
+import { publicClosure } from '../../domain/tournament-closure'
 import type { ClockPort } from '../ports/ClockPort'
 import type { RegistrationRepository } from '../ports/RegistrationPorts'
 import type { EncounterProgress, LifecycleRepository } from '../ports/LifecyclePorts'
@@ -27,6 +28,7 @@ export class Progressions implements EncounterProgress {
       state = await this.repository.read(id)
     const bracket = tournament.bracket ? projectBracket(tournament.bracket, state.results) : null
     return {
+      closure: publicClosure(tournament.closure),
       bracket,
       champion: state.champion,
       statistics:
@@ -53,7 +55,9 @@ export class Progressions implements EncounterProgress {
     return (await this.view(id)).bracket
   }
   async confirm(id: string, encounterId: string): Promise<void> {
-    const bracket = (await this.tournaments.read(id)).bracket
+    const tournament = await this.tournaments.read(id)
+    requireActiveTournament(tournament)
+    const bracket = tournament.bracket
     requireRule(bracket !== null, 'BRACKET_REQUIRED', 'No hay llaves publicadas.', 409)
     const resolution = (await this.acceptance?.resolutions(id))?.find(
       (r) => r.encounterId === encounterId,
@@ -110,7 +114,7 @@ export class Progressions implements EncounterProgress {
   }
   async reconcile(): Promise<void> {
     for (const tournament of await this.tournaments.list()) {
-      if (tournament.bracket === null) continue
+      if (tournament.closure != null || tournament.bracket === null) continue
       // Orden topológico del snapshot; una lectura fallida no bloquea otras justas/torneos.
       for (const match of tournament.bracket.matches) {
         try {
