@@ -13,6 +13,7 @@ import { Progressions } from '../../src/application/use-cases/Progressions'
 import { MatchAcceptance } from '../../src/application/use-cases/MatchAcceptance'
 import { EncounterAdministration } from '../../src/application/use-cases/EncounterAdministration'
 import { AcceptanceReconciliation } from '../../src/application/use-cases/AcceptanceReconciliation'
+import { FREE_POLICY } from './registration-fixture'
 import type { TournamentMode } from '../../src/domain/registration'
 import type {
   CreateCombatRoomInput,
@@ -21,6 +22,7 @@ import type {
 export const acceptanceFixture = async (
   options: {
     mode?: TournamentMode
+    isTest?: boolean
     registrations?: RegistrationRepository
     encounters?: TournamentEncounterRepositoryPort
     acceptance?: MatchAcceptanceStore
@@ -28,7 +30,12 @@ export const acceptanceFixture = async (
     actions?: EncounterAdminStore
   } = {},
 ) => {
-  const f = await modeFixture(options.mode ?? 'TRIO', options.registrations),
+  const f = await modeFixture(
+      options.mode ?? 'TRIO',
+      options.registrations,
+      FREE_POLICY,
+      options.isTest,
+    ),
     b = await f.publish()
   const store = options.acceptance ?? new InMemoryMatchAcceptanceStore(),
     lifecycle = options.lifecycle ?? new InMemoryLifecycleRepository()

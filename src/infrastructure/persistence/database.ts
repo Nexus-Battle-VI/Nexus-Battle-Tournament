@@ -19,6 +19,8 @@ import { migration as acceptance } from '../../adapters/outbound/persistence/mig
 
 import * as externalLinks from '../../adapters/outbound/persistence/migrations/008-tournament-external-links'
 import * as broadcast from '../../adapters/outbound/persistence/migrations/009-tournament-broadcast'
+import { migration as combatResultProjection } from '../../adapters/outbound/persistence/migrations/010-tournament-combat-result-projection'
+import { migration as testTournaments } from '../../adapters/outbound/persistence/migrations/011-test-tournaments'
 
 export interface DatabaseOptions {
   readonly connectionString: string
@@ -86,6 +88,8 @@ export const MIGRATIONS: Readonly<Record<string, Migration>> = {
   '007-tournament-round-acceptance-resolution': acceptance,
   '008-tournament-external-links': externalLinks,
   '009-tournament-broadcast': broadcast,
+  '010-tournament-combat-result-projection': combatResultProjection,
+  '011-test-tournaments': testTournaments,
 }
 
 export interface MigrationOutcome {

@@ -161,6 +161,7 @@ export interface TournamentEncounterActionTable {
   readonly occurred_at: ColumnType<Date, Date, never>
 }
 export interface RegistrationTournamentTable {
+  is_test: ColumnType<boolean, boolean | undefined, never>
   acceptance_policy: ColumnType<
     'ROUND_ACCEPTANCE_V1' | null,
     'ROUND_ACCEPTANCE_V1' | null | undefined,

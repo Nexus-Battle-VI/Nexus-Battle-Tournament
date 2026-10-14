@@ -174,7 +174,9 @@ export class EncounterAdministration {
       'La justa todavía no tiene los dos equipos resueltos.',
       409,
     )
+    const bracket = await this.viewBracket(encounter.tournamentId)
     const { roomId } = await this.commands.createRoom({
+      ...(bracket?.isTest === true ? { isTest: true } : {}),
       operationId: `tournament:${encounter.encounterId}:prepare`,
       tournamentId: encounter.tournamentId,
       encounterId: encounter.encounterId,

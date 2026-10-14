@@ -7,6 +7,32 @@ import { roundWindows } from '../../src/domain/match-acceptance'
 import { UnavailableTournamentPrizeRecipients } from '../../src/adapters/outbound/system/UnavailableTournamentPrizeRecipients'
 
 describe('HU-85 v3: reloj, aceptación individual, decisión durable y avance por ausencia', () => {
+  it.each(['SOLO', 'DUO', 'TRIO'] as const)(
+    '%s: cada pareja de equipos aceptados inicia su propia sala de prueba',
+    async (mode) => {
+      const f = await acceptanceFixture({ mode, isTest: true })
+      expect(f.b.isTest).toBe(true)
+      f.setOpen()
+      for (const label of ['E1', 'E2', 'E3', 'E4']) {
+        await f.acceptSide(label, 0)
+        await f.acceptSide(label, 1)
+      }
+      f.setClose()
+      for (const label of ['E1', 'E2', 'E3', 'E4'])
+        await f.reconciliation.run(f.id, f.e(label).encounterId)
+      expect(f.commands.createRoom).toHaveBeenCalledTimes(4)
+      expect(f.commands.startRoom).toHaveBeenCalledTimes(4)
+      const commands = f.commands.createRoom.mock.calls.map(([input]) => input)
+      expect(new Set(commands.map((input) => input.encounterId)).size).toBe(4)
+      for (const [index, input] of commands.entries()) {
+        expect(input).toMatchObject({ isTest: true, tournamentId: f.id, tournamentMode: mode })
+        expect(input.teams.flatMap((team) => team.memberIds)).toEqual(
+          f.b.seeds.slice(index * 2, index * 2 + 2).flatMap((team) => team.memberIds),
+        )
+      }
+    },
+  )
+
   it('guarda seis ventanas UTC; cierre exacto excluye aceptación, replay mantiene recibo y timestamp', async () => {
     const f = await acceptanceFixture(),
       id = f.e().encounterId,

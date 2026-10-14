@@ -67,6 +67,7 @@ const validWalletResult = (
   value.amount === expected.amount
 
 export interface CreateTournament {
+  isTest?: boolean
   tournamentMode?: TournamentMode
   operationId: string
   name: string
@@ -130,6 +131,11 @@ export class Registrations {
   async create(subject: string, command: CreateTournament) {
     validateOperation(command.operationId)
     requireRule(
+      command.isTest === undefined || typeof command.isTest === 'boolean',
+      'INVALID_CONFIGURATION',
+      'El tipo de torneo debe ser válido.',
+    )
+    requireRule(
       command.tournamentMode === undefined ||
         ['SOLO', 'DUO', 'TRIO'].includes(command.tournamentMode),
       'INVALID_MODALITY',
@@ -152,6 +158,11 @@ export class Registrations {
                   methods: [{ method: 'CREDITS', amount: command.entryFee }],
                 },
           )
+    requireRule(
+      command.isTest !== true || (policy.free && command.tournamentMode !== undefined),
+      'INVALID_TEST_TOURNAMENT',
+      'Un torneo de prueba requiere inscripción gratuita y modalidad explícita.',
+    )
     const dates = [command.opensAt, command.closesAt, command.startsAt]
     requireRule(
       dates.every(
@@ -184,10 +195,12 @@ export class Registrations {
       closesAt,
       startsAt,
       ...(command.tournamentMode === undefined ? [] : [command.tournamentMode]),
+      ...(command.isTest === true ? [{ isTest: true }] : []),
     ])
     const t = await this.repository.create(
       {
         id: randomUUID(),
+        isTest: command.isTest === true,
         acceptancePolicy: command.tournamentMode === undefined ? null : ACCEPTANCE_POLICY,
         roundWindows: command.tournamentMode === undefined ? [] : roundWindows(startsAt),
         tournamentMode: command.tournamentMode ?? 'DUO',
