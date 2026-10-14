@@ -44,7 +44,14 @@ export class PostgresRegistrationRepository implements RegistrationRepository {
           )
         return this.load(tx, existing.tournament_id)
       }
-      const dates = await tx.selectFrom('tournaments').select('starts_at').execute()
+      const dates =
+        t.isTest === true
+          ? []
+          : await tx
+              .selectFrom('tournaments')
+              .select('starts_at')
+              .where('is_test', '=', false)
+              .execute()
       if (
         dates.some(
           (x) =>
@@ -60,6 +67,7 @@ export class PostgresRegistrationRepository implements RegistrationRepository {
         .insertInto('tournaments')
         .values({
           id: t.id,
+          is_test: t.isTest === true,
           acceptance_policy: t.acceptancePolicy ?? null,
           round_windows: JSON.stringify(t.roundWindows ?? []),
           tournament_mode: t.tournamentMode ?? 'DUO',
@@ -104,6 +112,7 @@ export class PostgresRegistrationRepository implements RegistrationRepository {
       .execute()
     return {
       id,
+      isTest: t.is_test,
       acceptancePolicy: t.acceptance_policy,
       roundWindows: t.round_windows,
       tournamentMode: t.tournament_mode,

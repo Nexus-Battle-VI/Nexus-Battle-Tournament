@@ -61,6 +61,36 @@ suite('HU-85.4 contra Combat real (Account e Inventory son dobles de prueba)', (
     await f.brackets.publish(tid, 'admin', 'pub')
   }, 30000)
 
+  it('el contrato de piloto viaja firmado hasta Combat real, que confirma el modo y prepara una sala jugable', async () => {
+    const commands = new HttpCombatRoomCommandAdapter(base, SECRET)
+    const encounterId = tid + ':pilot-contract'
+    const input = {
+      operationId: encounterId + ':prepare',
+      tournamentId: tid,
+      encounterId,
+      tournamentMode: 'SOLO' as const,
+      teamSize: 1 as const,
+      isTest: true,
+      teams: [
+        { teamId: 'pilot-a', memberIds: ['p0'] },
+        { teamId: 'pilot-b', memberIds: ['p1'] },
+      ] as const,
+    }
+    const { roomId } = await commands.createRoom(input)
+    expect((await commands.createRoom(input)).roomId).toBe(roomId)
+    await commands.startRoom(roomId, {
+      operationId: encounterId + ':start',
+      tournamentId: tid,
+      encounterId,
+    })
+    const record = await new HttpCombatRecordAdapter(base, SECRET).readRecord(roomId, 0)
+    expect(record.status).toBe('IN_BATTLE')
+    expect(record.teams?.flatMap((team) => team.participants.map((p) => p.playerId))).toEqual([
+      'p0',
+      'p1',
+    ])
+  })
+
   it('CA-01 real: prepara E1 en Combat, vincula la sala y registra actor/justa/acción/fecha', async () => {
     const receipt = await admin().prepare(tid, `${tid}:E1`, 'admin', 'prep-e1')
     expect(receipt).toMatchObject({ action: 'PREPARE', actor: 'admin', replayed: false })

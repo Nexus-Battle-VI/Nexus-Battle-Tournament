@@ -114,10 +114,11 @@ export const fixture = (
   const simulator = new SimulatedEntryGateway()
   const registrations = new Registrations(repo, accounts, wallet, clock, simulator)
   const brackets = new Brackets(repo, clock)
-  const create = (tournamentMode?: TournamentMode) =>
+  const create = (tournamentMode?: TournamentMode, isTest = false) =>
     registrations.create('admin', {
       operationId: 'create',
       ...(tournamentMode === undefined ? {} : { tournamentMode }),
+      ...(isTest ? { isTest: true } : {}),
       name: 'Torneo de prueba',
       entryPolicy: policy,
       opensAt: '2026-10-01T00:00:00Z',
