@@ -68,6 +68,9 @@ class EntryDto extends OperationDto {
 }
 class CreateDto extends OperationDto {
   @ValidateIf((_: object, value: unknown) => value !== undefined)
+  @IsBoolean()
+  isTest?: boolean
+  @ValidateIf((_: object, value: unknown) => value !== undefined)
   @IsIn(['SOLO', 'DUO', 'TRIO'])
   tournamentMode?: 'SOLO' | 'DUO' | 'TRIO'
   @IsString() @MinLength(1) @MaxLength(100) name!: string

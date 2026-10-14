@@ -1,4 +1,5 @@
 import { startTestPostgres } from '../support/postgres'
+import { sql } from 'kysely'
 import {
   createDatabase,
   migrateToLatest,
@@ -52,7 +53,31 @@ it('upgrade desde HU-83 conserva archivo existente y registro/bracket al añadir
       Object.entries(MIGRATIONS).filter(([name]) => name < '008'),
     )
     expect((await migrateToLatest(db, registrationBase)).error).toBeUndefined()
-    const f = fixture(new PostgresRegistrationRepository(db), FREE_POLICY)
+    const legacyRegistration = new PostgresRegistrationRepository(db)
+    // Sembrar con las columnas de 007: el adaptador actual exige is_test (011).
+    // Esta prueba verifica datos anteriores al upgrade, no ejecutar código nuevo
+    // contra una base que todavía no recibió sus migraciones.
+    legacyRegistration.create = async (t, operationId, intent) => {
+      await db.transaction().execute(async (tx) => {
+        await sql`
+          INSERT INTO tournaments
+            (id, name, entry_fee, entry_policy, opens_at, closes_at, starts_at,
+             starts_epoch, tournament_mode, team_size, contract_version,
+             acceptance_policy, round_windows)
+          VALUES (${t.id}, ${t.name}, ${t.entryFee}, ${JSON.stringify(t.entryPolicy)}::jsonb,
+                  ${new Date(t.opensAt)}, ${new Date(t.closesAt)}, ${new Date(t.startsAt)},
+                  ${new Date(t.startsAt).getTime()}, ${t.tournamentMode ?? 'DUO'},
+                  ${t.teamSize ?? 2}, ${t.contractVersion ?? 'torneos-hu77-84-78-hu83-v2.0.0'},
+                  ${t.acceptancePolicy ?? null}, ${JSON.stringify(t.roundWindows ?? [])}::jsonb)
+        `.execute(tx)
+        await tx
+          .insertInto('tournament_admin_operations')
+          .values({ operation_id: operationId, intent, tournament_id: t.id })
+          .execute()
+      })
+      return t
+    }
+    const f = fixture(legacyRegistration, FREE_POLICY)
     const tournament = await f.create()
     for (let n = 0; n < 8; n++) await f.confirm(tournament.id, n)
     f.setNow('2026-10-10T00:00:00Z')
@@ -61,6 +86,8 @@ it('upgrade desde HU-83 conserva archivo existente y registro/bracket al añadir
     expect((await migrateToLatest(db)).applied).toEqual([
       '008-tournament-external-links',
       '009-tournament-broadcast',
+      '010-tournament-combat-result-projection',
+      '011-test-tournaments',
     ])
     const links = new ExternalLinks(new PostgresExternalLinksRepository(db), f.repo, f.clock)
     await links.save(tournament.id, {
@@ -70,7 +97,8 @@ it('upgrade desde HU-83 conserva archivo existente y registro/bracket al añadir
     })
     expect(await archive.findOne('legacy', existing.encounterId)).toEqual(existing)
     expect(await archive.listEvents('legacy', existing.encounterId, 0, 100)).toEqual(beforeEvents)
-    expect(await f.repo.read(tournament.id)).toEqual(before)
+    expect(before.isTest).toBeUndefined()
+    expect(await f.repo.read(tournament.id)).toEqual({ ...before, isTest: false })
     expect((await links.view(tournament.id)).revision).toBe(1)
   } finally {
     await db.destroy()

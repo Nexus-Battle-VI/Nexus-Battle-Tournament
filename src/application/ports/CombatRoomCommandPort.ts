@@ -9,6 +9,7 @@ export interface CombatRoomTeamInput {
 }
 
 export interface CreateCombatRoomInput {
+  readonly isTest?: boolean
   readonly tournamentMode?: TournamentMode
   readonly teamSize?: TeamSize
   readonly operationId: string

@@ -38,6 +38,7 @@ export interface BracketMatch {
   destinations: { winner: Destination | null; loser: Destination | null }
 }
 export interface PublishedBracket {
+  isTest?: boolean
   acceptancePolicy?: typeof ACCEPTANCE_POLICY | null
   roundSchedule?: RoundWindow[]
   version: 2 | 3
@@ -150,6 +151,7 @@ export const generateBracket = (
       ? { tournamentMode: t.tournamentMode ?? 'DUO', teamSize: t.teamSize ?? 2 }
       : {}),
     tournamentId: t.id,
+    ...(t.isTest === true ? { isTest: true } : {}),
     operationId,
     publishedAt: now.toISOString(),
     publishedBy: subject,
