@@ -6,7 +6,12 @@ import {
   type MatchAcceptanceState,
   type ResolvedTeam,
 } from '../../domain/match-acceptance'
-import { RegistrationError, requireRule, validateOperation } from '../../domain/registration'
+import {
+  RegistrationError,
+  requireActiveTournament,
+  requireRule,
+  validateOperation,
+} from '../../domain/registration'
 import { projectBracket } from '../../domain/progression'
 import {
   acceptanceReceipt,
@@ -27,8 +32,9 @@ export class MatchAcceptance {
     readonly clock: ClockPort,
     private readonly random: FairRandomPort,
   ) {}
-  private async context(id: string, encounterId: string) {
+  private async context(id: string, encounterId: string, allowClosed = false) {
     const t = await this.tournaments.read(id)
+    if (!allowClosed) requireActiveTournament(t)
     requireRule(
       t.acceptancePolicy === ACCEPTANCE_POLICY,
       'LEGACY_ACCEPTANCE_DISABLED',
@@ -185,7 +191,7 @@ export class MatchAcceptance {
     })
     if (replay !== null) return replay
     try {
-      return await this.store.change(initial, (s) => {
+      const confirmed = await this.store.change(initial, (s) => {
         const now = this.clock.now()
         const team = s.roster?.find((team) => team.memberIds.includes(subject))
         requireRule(team !== undefined, 'FORBIDDEN', 'Falta el jugador en el roster fijado.', 403)
@@ -227,6 +233,8 @@ export class MatchAcceptance {
         })
         return acceptanceReceipt(receipt, s.window, accepted !== undefined)
       })
+      await this.tournaments.recordActivity?.(id, confirmed.acceptedAt)
+      return confirmed
     } catch (error: unknown) {
       try {
         await this.store.change(initial, (s) => {
@@ -256,6 +264,7 @@ export class MatchAcceptance {
     })
   }
   async guard(id: string, encounterId: string): Promise<void> {
+    requireActiveTournament(await this.tournaments.read(id))
     const s = await this.store.read(id, encounterId)
     requireRule(
       s !== null &&
@@ -275,7 +284,7 @@ export class MatchAcceptance {
   ): Promise<ConvocationExtension | null> {
     const t = await this.tournaments.read(id)
     if (t.acceptancePolicy !== ACCEPTANCE_POLICY) return null
-    const { initial } = await this.context(id, encounterId),
+    const { initial } = await this.context(id, encounterId, true),
       s = (await this.store.read(id, encounterId)) ?? initial
     const progress = (await this.progress.bracket(id))?.matches.find(
       (m) => m.encounterId === encounterId,
@@ -301,36 +310,47 @@ export class MatchAcceptance {
       acceptanceStatus:
         resolution !== null
           ? 'RESOLVED'
-          : s.phase === 'BLOCKED'
-            ? 'BLOCKED_DELAY'
-            : s.phase === 'OPEN' && deadlinePassed
-              ? 'CLOSED'
-              : s.phase,
+          : t.closure != null
+            ? 'CLOSED'
+            : s.phase === 'BLOCKED'
+              ? 'BLOCKED_DELAY'
+              : s.phase === 'OPEN' && deadlinePassed
+                ? 'CLOSED'
+                : s.phase,
       operationalStatus:
         resolution !== null
           ? 'FINISHED'
-          : s.blocker?.code === 'ACCEPTANCE_PENDING'
-            ? 'RESOLUTION_PENDING'
-            : s.blocker !== null
-              ? 'DEPENDENCY_ERROR'
-              : s.combatIntent?.phase === 'STARTED'
-                ? 'IN_BATTLE'
-                : (s.combatIntent?.phase ??
-                  (s.phase === 'CLOSED' || (s.phase === 'OPEN' && deadlinePassed)
-                    ? 'RESOLUTION_PENDING'
-                    : 'IDLE')),
+          : t.closure != null
+            ? 'TOURNAMENT_CLOSED'
+            : s.blocker?.code === 'ACCEPTANCE_PENDING'
+              ? 'RESOLUTION_PENDING'
+              : s.blocker !== null
+                ? 'DEPENDENCY_ERROR'
+                : s.combatIntent?.phase === 'STARTED'
+                  ? 'IN_BATTLE'
+                  : (s.combatIntent?.phase ??
+                    (s.phase === 'CLOSED' || (s.phase === 'OPEN' && deadlinePassed)
+                      ? 'RESOLUTION_PENDING'
+                      : 'IDLE')),
       acceptedCounts: acceptanceCounts(s),
       myAcceptance: own === undefined ? null : acceptanceReceipt(own, s.window, true),
       blockReason:
-        s.blocker === null
-          ? null
-          : {
-              ...s.blocker,
-              code:
-                s.blocker.code === 'DEPENDENCIES_DELAYED'
-                  ? 'PREVIOUS_RESULT_PENDING'
-                  : s.blocker.code,
-            },
+        t.closure != null && resolution === null
+          ? {
+              code: 'TOURNAMENT_CLOSED',
+              message: 'Torneo cerrado sin campeón. Se conservan las batallas jugadas.',
+              since: t.closure.closedAt,
+              responsible: 'TOURNAMENT_OPERATIONS',
+            }
+          : s.blocker === null
+            ? null
+            : {
+                ...s.blocker,
+                code:
+                  s.blocker.code === 'DEPENDENCIES_DELAYED'
+                    ? 'PREVIOUS_RESULT_PENDING'
+                    : s.blocker.code,
+              },
       resolution,
       winnerTeamId: progress?.winnerTeamId ?? s.resolution?.winnerTeamId ?? null,
       loserTeamId: progress?.loserTeamId ?? s.resolution?.loserTeamId ?? null,

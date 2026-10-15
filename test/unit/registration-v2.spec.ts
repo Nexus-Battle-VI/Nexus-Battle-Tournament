@@ -1,5 +1,5 @@
 import { Registrations } from '../../src/application/use-cases/Registrations'
-import { CALENDAR_DISTANCE_MS, validateEntryPolicy } from '../../src/domain/registration'
+import { validateEntryPolicy } from '../../src/domain/registration'
 import { PersistedBracketEncounterSource } from '../../src/adapters/outbound/bracket/PersistedBracketEncounterSource'
 import { fixture, CARD, FREE_POLICY, MIXED_POLICY } from '../support/registration-fixture'
 
@@ -397,7 +397,7 @@ describe('Llaves y calendario v2', () => {
     })
   })
   it.each([-1, 1])(
-    'calendario compara hacia ambos sentidos %i y mantiene replay administrativo',
+    'permite inicios cercanos en ambos sentidos %i y mantiene replay administrativo',
     async (sign) => {
       const f = fixture(),
         t = await f.create(),
@@ -413,13 +413,12 @@ describe('Llaves y calendario v2', () => {
           startsAt: new Date(date).toISOString(),
         }
       }
-      for (const distance of [90 * 86400000, CALENDAR_DISTANCE_MS - 1])
-        await expect(f.registrations.create('admin', command(distance))).rejects.toMatchObject({
-          code: 'CALENDAR_CONFLICT',
-        })
-      const created = await f.registrations.create('admin', command(CALENDAR_DISTANCE_MS))
-      expect(created.id).not.toBe('new')
-      expect(await f.registrations.create('admin', command(CALENDAR_DISTANCE_MS))).toEqual(created)
+      for (const distance of [0, 1, 86400000, 90 * 86400000]) {
+        const request = { ...command(distance), operationId: `new-${String(distance)}` }
+        const created = await f.registrations.create('admin', request)
+        expect(created.id).not.toBe(t.id)
+        expect(await f.registrations.create('admin', request)).toEqual(created)
+      }
     },
   )
   it.each([

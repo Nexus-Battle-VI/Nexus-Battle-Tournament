@@ -88,6 +88,7 @@ it('upgrade desde HU-83 conserva archivo existente y registro/bracket al añadir
       '009-tournament-broadcast',
       '010-tournament-combat-result-projection',
       '011-test-tournaments',
+      '012-tournament-closure',
     ])
     const links = new ExternalLinks(new PostgresExternalLinksRepository(db), f.repo, f.clock)
     await links.save(tournament.id, {
@@ -98,7 +99,12 @@ it('upgrade desde HU-83 conserva archivo existente y registro/bracket al añadir
     expect(await archive.findOne('legacy', existing.encounterId)).toEqual(existing)
     expect(await archive.listEvents('legacy', existing.encounterId, 0, 100)).toEqual(beforeEvents)
     expect(before.isTest).toBeUndefined()
-    expect(await f.repo.read(tournament.id)).toEqual({ ...before, isTest: false })
+    expect(await f.repo.read(tournament.id)).toEqual({
+      ...before,
+      isTest: false,
+      closure: null,
+      lastActivityAt: null,
+    })
     expect((await links.view(tournament.id)).revision).toBe(1)
   } finally {
     await db.destroy()

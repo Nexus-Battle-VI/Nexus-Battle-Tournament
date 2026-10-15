@@ -16,6 +16,10 @@ import { TOURNAMENT_ENCOUNTER_SOURCE } from '../../src/application/ports/Tournam
 import { COMBAT_RECORD } from '../../src/application/ports/CombatRecordPort'
 import { DevFixtureTournamentEncounterSource } from '../../src/adapters/outbound/bracket/DevFixtureTournamentEncounterSource'
 import { DevFixtureCombatRecordAdapter } from '../../src/adapters/outbound/combat/DevFixtureCombatRecordAdapter'
+import {
+  TOURNAMENT_CLOSURES,
+  type TournamentClosures,
+} from '../../src/application/use-cases/TournamentClosures'
 
 /**
  * Pruebas HTTP de HU-83 (Management#465): las dos rutas de consulta de
@@ -27,13 +31,17 @@ import { DevFixtureCombatRecordAdapter } from '../../src/adapters/outbound/comba
 const IDENTITY: VerifiedIdentity = {
   subject: 'participante-1',
   email: null,
-  roles: new Set([Role.Player]),
+  roles: new Set([Role.Administrator]),
 }
 
 const stubVerifier: TokenVerifierPort = {
   verify: (token: string): Promise<VerifiedIdentity> =>
-    token === 'token-valido'
-      ? Promise.resolve(IDENTITY)
+    token === 'token-valido' || token === 'token-jugador-1'
+      ? Promise.resolve(
+          token === 'token-jugador-1'
+            ? { ...IDENTITY, subject: 'jugador-1', roles: new Set([Role.Player]) }
+            : IDENTITY,
+        )
       : Promise.reject(new TokenVerificationError()),
 }
 
@@ -87,6 +95,60 @@ describe('GET /api/v1/tournaments/:tournamentId/matches (HU-83)', () => {
   })
 
   const auth = (req: request.Test) => req.set('Authorization', 'Bearer token-valido')
+
+  it('un torneo histórico cerrado conserva el resultado y deja de anunciar una batalla pendiente', async () => {
+    const closed = jest
+      .spyOn(app.get<TournamentClosures>(TOURNAMENT_CLOSURES), 'isClosed')
+      .mockResolvedValue(true)
+    try {
+      const list = await auth(
+        request(app.getHttpServer()).get('/api/v1/tournaments/T-detail-2/matches'),
+      )
+      expect(list.status).toBe(200)
+      expect(list.body).toHaveLength(4)
+      expect(
+        list.body.every(
+          (m: { operationalStatus: string }) => m.operationalStatus === 'TOURNAMENT_CLOSED',
+        ),
+      ).toBe(true)
+      const detail = await auth(
+        request(app.getHttpServer()).get('/api/v1/tournaments/T-detail-2/matches/E3'),
+      )
+      expect(detail.status).toBe(200)
+      expect(detail.body.operationalStatus).toBe('TOURNAMENT_CLOSED')
+      expect(detail.body.status).toBe('FINISHED')
+      expect(detail.body.result.winnerTeamLabel).toBe('A')
+    } finally {
+      closed.mockRestore()
+    }
+  })
+
+  it('historial personal filtra por JWT y rechaza el detalle ajeno aunque se conozca su ID', async () => {
+    const own = await request(app.getHttpServer())
+      .get('/api/v1/tournaments/T-detail/matches/mine')
+      .set('Authorization', 'Bearer token-jugador-1')
+    expect(own.status).toBe(200)
+    expect(own.body.map((e: { matchId: string }) => e.matchId)).toEqual(['E1'])
+    expect(own.body[0].myBattle).toBe(true)
+    const unrelated = await auth(
+      request(app.getHttpServer()).get('/api/v1/tournaments/T-detail/matches/mine'),
+    )
+    expect(unrelated.status).toBe(200)
+    expect(unrelated.body).toEqual([])
+    const denied = await request(app.getHttpServer())
+      .get('/api/v1/tournaments/T-detail/matches/mine/E2?afterSeq=0')
+      .set('Authorization', 'Bearer token-jugador-1')
+    expect(denied.status).toBe(403)
+    const legacyDenied = await request(app.getHttpServer())
+      .get('/api/v1/tournaments/T-detail/matches/E2?afterSeq=0')
+      .set('Authorization', 'Bearer token-jugador-1')
+    expect(legacyDenied.status).toBe(403)
+    const allowed = await request(app.getHttpServer())
+      .get('/api/v1/tournaments/T-detail/matches/mine/E1?afterSeq=0')
+      .set('Authorization', 'Bearer token-jugador-1')
+    expect(allowed.status).toBe(200)
+    expect(allowed.body.myBattle).toBe(true)
+  })
 
   it('exige testimonio de identidad (401 sin token)', async () => {
     const response = await request(app.getHttpServer()).get('/api/v1/tournaments/T1/matches')

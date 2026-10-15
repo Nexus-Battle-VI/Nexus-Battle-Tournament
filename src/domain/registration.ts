@@ -1,5 +1,6 @@
 import type { PublishedBracket } from './bracket'
 import type { RoundWindow, ACCEPTANCE_POLICY } from './match-acceptance'
+import { publicClosure, type TournamentClosure } from './tournament-closure'
 
 export const CONTRACT_VERSION = 'torneos-hu77-84-78-hu83-v2.0.0'
 export const MODALITIES_CONTRACT_VERSION = 'torneos-v3.0.0'
@@ -13,7 +14,6 @@ export interface RegistrationMember {
   consentAt: string | null
   consentVersion: string | null
 }
-export const CALENDAR_DISTANCE_MS = 91 * 24 * 60 * 60 * 1000
 export type PaymentMethod = 'CREDITS' | 'SIMULATED_MONEY'
 export interface CreditMethod {
   method: 'CREDITS'
@@ -111,8 +111,10 @@ export interface RegistrationOperation {
   }
 }
 export interface RegistrationTournament {
-  /** Piloto gratuito, fuera del calendario oficial y sin recompensas. */
+  /** Piloto gratuito y sin recompensas. */
   isTest?: boolean
+  closure?: TournamentClosure | null
+  lastActivityAt?: string | null
   acceptancePolicy?: typeof ACCEPTANCE_POLICY | null
   roundWindows?: RoundWindow[]
   tournamentMode?: TournamentMode
@@ -147,7 +149,13 @@ export const requireRule: (
   if (!condition) throw new RegistrationError(code, message, status)
 }
 export const registrationOpen = (t: RegistrationTournament, now: Date): boolean =>
-  t.bracket === null && new Date(t.opensAt) <= now && now < new Date(t.closesAt)
+  t.closure == null &&
+  t.bracket === null &&
+  new Date(t.opensAt) <= now &&
+  now < new Date(t.closesAt)
+export const requireActiveTournament = (t: RegistrationTournament): void => {
+  requireRule(t.closure == null, 'TOURNAMENT_CLOSED', 'El torneo fue cerrado sin campeón.', 409)
+}
 /** Compatibilidad de datos: nunca cambia recibos ni huellas de operaciones v2. */
 export const teamMembers = (team: RegistrationTeam): RegistrationMember[] =>
   team.members ?? [
@@ -283,6 +291,7 @@ export const entryFeeProjection = (policy: EntryPolicy): number | null =>
     ? 0
     : (policy.methods.find((m): m is CreditMethod => m.method === 'CREDITS')?.amount ?? null)
 export const publicTournament = (t: RegistrationTournament, now: Date) => ({
+  closure: publicClosure(t.closure),
   isTest: t.isTest === true,
   acceptancePolicy: t.acceptancePolicy ?? null,
   roundSchedule: t.roundWindows ?? [],

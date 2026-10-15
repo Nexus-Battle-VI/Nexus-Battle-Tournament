@@ -73,6 +73,7 @@ export interface ConvocationExtension extends RoundWindow {
     | 'START_PENDING'
     | 'IN_BATTLE'
     | 'FINISHED'
+    | 'TOURNAMENT_CLOSED'
     | 'DEPENDENCY_ERROR'
   acceptedCounts: [number, number]
   myAcceptance: AcceptanceReceipt | null

@@ -24,7 +24,7 @@ API y migraciones para consumidores: [docs/torneos-v2.md](docs/torneos-v2.md).
 
 ## Qué posee este contexto
 
-- Torneos y su calendario (uno cada 91 días).
+- Torneos y su calendario, sin límite de cantidad ni separación entre torneos.
 - Equipos inscritos de dos jugadores, con nombre y avatar.
 - Inscripciones y pagos de cupo, con su `operationId`.
 - Bracket de ocho equipos humanos confirmados y dieciséis jugadores distintos, sin relleno por IA (HU-78 vigente).

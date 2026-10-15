@@ -104,7 +104,7 @@ describe('HU-85: preparar e iniciar justas independientes', () => {
   const detail = (match: string) =>
     request(app.getHttpServer())
       .get(`/api/v1/tournaments/${tid}/matches/${tid}:${match}`)
-      .set('Authorization', 'Bearer p0')
+      .set('Authorization', 'Bearer admin')
 
   it('C1 CA-01: prepara E1, vincula una sala y deja recibo con actor, justa, acción y fecha', async () => {
     const response = await act('E1', 'prepare', 'prep-e1')

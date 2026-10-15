@@ -21,6 +21,7 @@ import * as externalLinks from '../../adapters/outbound/persistence/migrations/0
 import * as broadcast from '../../adapters/outbound/persistence/migrations/009-tournament-broadcast'
 import { migration as combatResultProjection } from '../../adapters/outbound/persistence/migrations/010-tournament-combat-result-projection'
 import { migration as testTournaments } from '../../adapters/outbound/persistence/migrations/011-test-tournaments'
+import { migration as tournamentClosure } from '../../adapters/outbound/persistence/migrations/012-tournament-closure'
 
 export interface DatabaseOptions {
   readonly connectionString: string
@@ -90,6 +91,7 @@ export const MIGRATIONS: Readonly<Record<string, Migration>> = {
   '009-tournament-broadcast': broadcast,
   '010-tournament-combat-result-projection': combatResultProjection,
   '011-test-tournaments': testTournaments,
+  '012-tournament-closure': tournamentClosure,
 }
 
 export interface MigrationOutcome {

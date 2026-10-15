@@ -211,7 +211,7 @@ describe('Calendario y aceptación HTTP v3; JWT controlado, sin cuentas reales',
     f.setOpen(2)
     await f.reconciliation.run(f.id, f.e('E5').encounterId)
     const before = await f.store.read(f.id, f.e('E5').encounterId),
-      d = await detail(subject, 'E5')
+      d = await detail('admin', 'E5')
     expect(d.body).toMatchObject({
       acceptanceStatus: 'BLOCKED_DELAY',
       operationalStatus: 'DEPENDENCY_ERROR',

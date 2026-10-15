@@ -1,5 +1,6 @@
 import type { RegistrationTournament, TeamAvatar } from '../../domain/registration'
 export interface RegistrationRepository {
+  recordActivity?(id: string, at: string): Promise<void>
   list(): Promise<RegistrationTournament[]>
   create(
     tournament: RegistrationTournament,

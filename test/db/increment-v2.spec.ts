@@ -122,13 +122,12 @@ describe('Combinación HU-77/84/78/83 en PostgreSQL real aislado', () => {
         startsAt: new Date(date).toISOString(),
       }
     }
-    for (const days of [90 * 86400000, 91 * 86400000 - 1])
-      await expect(f.registrations.create('admin', command(days))).rejects.toMatchObject({
-        code: 'CALENDAR_CONFLICT',
-      })
-    expect((await f.registrations.create('admin', command(91 * 86400000))).entryPolicy).toEqual(
-      FREE_POLICY,
-    )
+    for (const distance of [0, 1, 86400000, 90 * 86400000]) {
+      const request = { ...command(distance), operationId: `second-${String(distance)}` }
+      const created = await f.registrations.create('admin', request)
+      expect(created.entryPolicy).toEqual(FREE_POLICY)
+      expect(await f.registrations.create('admin', request)).toEqual(created)
+    }
   })
   let runtime: Awaited<ReturnType<typeof startTestPostgres>>
   let db: Kysely<Database>
@@ -205,6 +204,7 @@ describe('Combinación HU-77/84/78/83 en PostgreSQL real aislado', () => {
       '009-tournament-broadcast',
       '010-tournament-combat-result-projection',
       '011-test-tournaments',
+      '012-tournament-closure',
     ])
     expect(await archive.findOne(original.tournamentId, original.encounterId)).toEqual(original)
     const f = fixture(new PostgresRegistrationRepository(db))
@@ -235,6 +235,7 @@ describe('Combinación HU-77/84/78/83 en PostgreSQL real aislado', () => {
       '009-tournament-broadcast',
       '010-tournament-combat-result-projection',
       '011-test-tournaments',
+      '012-tournament-closure',
     ])
   })
   it('conserva registro/consentimientos/recibos al reconstruir adaptadores', async () => {
@@ -441,7 +442,7 @@ describe('Combinación HU-77/84/78/83 en PostgreSQL real aislado', () => {
     expect(await archive.findOne(t.id, t.id + ':E1')).toEqual(old)
     expect(await archive.findAllByTournament(t.id)).toHaveLength(1)
   })
-  it('calendario SQL rechaza solapamiento aunque se salte el caso de uso; 91 días exactos pasan', async () => {
+  it('calendario SQL admite torneos en la misma fecha y fechas cercanas', async () => {
     await migrate()
     const f = fixture(new PostgresRegistrationRepository(db)),
       t = await f.create()
@@ -458,12 +459,7 @@ describe('Combinación HU-77/84/78/83 en PostgreSQL real aislado', () => {
         starts_epoch: date,
       }
     }
-    await expect(
-      db
-        .insertInto('tournaments')
-        .values(row(91 * 86400000 - 1))
-        .execute(),
-    ).rejects.toMatchObject({ code: '23P01' })
+    await expect(db.insertInto('tournaments').values(row(0)).execute()).resolves.toBeDefined()
     await expect(
       db
         .insertInto('tournaments')
@@ -471,7 +467,7 @@ describe('Combinación HU-77/84/78/83 en PostgreSQL real aislado', () => {
         .execute(),
     ).resolves.toBeDefined()
   })
-  it('crear dos torneos concurrentes próximos confirma solo uno', async () => {
+  it('crear dos torneos concurrentes próximos confirma ambos', async () => {
     await migrate()
     const f = fixture(new PostgresRegistrationRepository(db))
     const base = {
@@ -492,7 +488,7 @@ describe('Combinación HU-77/84/78/83 en PostgreSQL real aislado', () => {
         startsAt: '2026-10-13T00:00:00Z',
       }),
     ])
-    expect(outcomes.filter((x) => x.status === 'fulfilled')).toHaveLength(1)
-    expect(await f.repo.list()).toHaveLength(1)
+    expect(outcomes.filter((x) => x.status === 'fulfilled')).toHaveLength(2)
+    expect(await f.repo.list()).toHaveLength(2)
   })
 })
