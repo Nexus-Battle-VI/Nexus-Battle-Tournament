@@ -14,7 +14,7 @@ const command = {
 }
 
 describe('Piloto en producción sin afectar calendario ni cuentas', () => {
-  it('permite repetir un piloto y conserva los 91 días entre torneos oficiales', async () => {
+  it('permite repetir pilotos y torneos oficiales el mismo día', async () => {
     const f = fixture(undefined, FREE_POLICY)
     await f.create('SOLO')
     const pilot = await f.registrations.create('admin', { ...command, isTest: true })
@@ -30,7 +30,7 @@ describe('Piloto en producción sin afectar calendario ni cuentas', () => {
         ...command,
         operationId: 'official-near',
       }),
-    ).rejects.toMatchObject({ code: 'CALENDAR_CONFLICT' })
+    ).resolves.toMatchObject({ isTest: false })
     const later = await f.registrations.create('admin', {
       ...command,
       operationId: 'official-later',

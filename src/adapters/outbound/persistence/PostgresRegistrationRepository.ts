@@ -3,7 +3,6 @@ import { sameJson } from '../../../domain/json'
 import type { RegistrationRepository } from '../../../application/ports/RegistrationPorts'
 import {
   RegistrationError,
-  CALENDAR_DISTANCE_MS,
   teamMemberIds,
   type RegistrationTournament,
   type RegistrationTeam,
@@ -44,25 +43,6 @@ export class PostgresRegistrationRepository implements RegistrationRepository {
           )
         return this.load(tx, existing.tournament_id)
       }
-      const dates =
-        t.isTest === true
-          ? []
-          : await tx
-              .selectFrom('tournaments')
-              .select('starts_at')
-              .where('is_test', '=', false)
-              .execute()
-      if (
-        dates.some(
-          (x) =>
-            Math.abs(x.starts_at.getTime() - new Date(t.startsAt).getTime()) < CALENDAR_DISTANCE_MS,
-        )
-      )
-        throw new RegistrationError(
-          'CALENDAR_CONFLICT',
-          'Los inicios deben tener al menos 91 días de separación.',
-          409,
-        )
       await tx
         .insertInto('tournaments')
         .values({
@@ -95,6 +75,14 @@ export class PostgresRegistrationRepository implements RegistrationRepository {
       .setIsolationLevel('repeatable read')
       .execute((tx) => this.load(tx, id))
   }
+  async recordActivity(id: string, at: string): Promise<void> {
+    await this.db
+      .updateTable('tournaments')
+      .set({ last_activity_at: sql`GREATEST(last_activity_at, ${new Date(at)})` })
+      .where('id', '=', id)
+      .where('closure', 'is', null)
+      .execute()
+  }
   private async load(db: Db, id: string): Promise<RegistrationTournament> {
     const t = await db.selectFrom('tournaments').selectAll().where('id', '=', id).executeTakeFirst()
     if (t === undefined)
@@ -112,6 +100,8 @@ export class PostgresRegistrationRepository implements RegistrationRepository {
       .execute()
     return {
       id,
+      closure: t.closure,
+      lastActivityAt: t.last_activity_at?.toISOString() ?? null,
       isTest: t.is_test,
       acceptancePolicy: t.acceptance_policy,
       roundWindows: t.round_windows,
@@ -139,6 +129,8 @@ export class PostgresRegistrationRepository implements RegistrationRepository {
           .forUpdate()
           .executeTakeFirst()
         const t = await this.load(tx, id)
+        const previousClosure = structuredClone(t.closure ?? null)
+        const previousActivity = t.lastActivityAt ?? null
         const previousBracket = structuredClone(t.bracket)
         const result = action(t)
         if (previousBracket !== null && !sameJson(previousBracket, t.bracket))
@@ -187,10 +179,24 @@ export class PostgresRegistrationRepository implements RegistrationRepository {
             .set({ bracket: JSON.stringify(t.bracket) })
             .where('id', '=', id)
             .execute()
+        if (
+          !sameJson(previousClosure, t.closure ?? null) ||
+          previousActivity !== (t.lastActivityAt ?? null)
+        )
+          await tx
+            .updateTable('tournaments')
+            .set({
+              closure: t.closure == null ? null : JSON.stringify(t.closure),
+              last_activity_at: t.lastActivityAt == null ? null : new Date(t.lastActivityAt),
+            })
+            .where('id', '=', id)
+            .execute()
         return result
       })
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : ''
+      if (message.includes('TOURNAMENT_COMPLETED'))
+        throw new RegistrationError('TOURNAMENT_COMPLETED', 'El torneo ya tiene campeón.', 409)
       if (message.includes('ENCOUNTER_IDENTITY_CONFLICT'))
         throw new RegistrationError(
           'ENCOUNTER_IDENTITY_CONFLICT',

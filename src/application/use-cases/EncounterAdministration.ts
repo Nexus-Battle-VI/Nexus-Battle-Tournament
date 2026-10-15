@@ -61,6 +61,7 @@ export class EncounterAdministration {
     private readonly clock: ClockPort,
     private readonly viewBracket: (tournamentId: string) => Promise<PublishedBracket | null>,
     private readonly acceptanceGuard?: (tournamentId: string, encounterId: string) => Promise<void>,
+    private readonly tournamentGuard?: (tournamentId: string) => Promise<void>,
   ) {
     this.seeder = new EnsureTournamentMatchesSeeded(encounters, source, record)
     this.projector = new ProjectCombatRecord(encounters, record)
@@ -93,6 +94,7 @@ export class EncounterAdministration {
   ): Promise<EncounterAdminReceipt> {
     validateOperation(operationId)
     return this.exclusive(`${tournamentId}|${encounterId}`, async () => {
+      await this.tournamentGuard?.(tournamentId)
       const guarded = await this.encounters.findOne(tournamentId, encounterId)
       if (guarded?.bracketMetadata?.acceptancePolicy === 'ROUND_ACCEPTANCE_V1') {
         requireRule(

@@ -78,6 +78,39 @@ describe('API combinada v2: JWT controlado, roles, recibos y HU-83', () => {
       .set('Authorization', 'Bearer ' + token)
       .send(body)
 
+  it('un administrador crea dos torneos el mismo día; el cierre exige rol, conserva el pago y devuelve una vez', async () => {
+    const id = await create()
+    const other = await send(
+      'admin',
+      {
+        operationId: 'same-day',
+        name: 'Segundo',
+        entryFee: 0,
+        opensAt: '2026-10-01T00:00:00Z',
+        closesAt: '2026-10-10T00:00:00Z',
+        startsAt: '2026-10-12T00:00:00Z',
+      },
+      'admin',
+    ).expect(200)
+    expect(other.body.id).not.toBe(id)
+    const team = await f.accept(id)
+    await f.registrations.enter(id, team.id, 'p0', { operationId: 'pay-close', method: 'CREDITS' })
+    await send(`admin/${id}/close`, { operationId: 'close' }, 'p0').expect(403)
+    await send(`admin/${id}/close`, { operationId: 'close', winnerTeamId: 'p0' }, 'admin').expect(
+      400,
+    )
+    const closed = await send(`admin/${id}/close`, { operationId: 'close' }, 'admin').expect(200)
+    expect(closed.body.closure).toMatchObject({
+      reason: 'ADMINISTRATIVE',
+      refundStatus: 'COMPLETE',
+    })
+    await send(`admin/${id}/close`, { operationId: 'close' }, 'admin').expect(200)
+    expect(f.wallet.refunds).toBe(1)
+    const view = await get(`${id}/registration`)
+    expect(view.body.refunds).toHaveLength(1)
+    expect(view.body.teams[0].entryReceipt.payment.method).toBe('CREDITS')
+  })
+
   it('solo un administrador crea el piloto gratuito; isTest no permite saltar autorización ni usar pagos', async () => {
     const pilot = {
       operationId: 'pilot-http',

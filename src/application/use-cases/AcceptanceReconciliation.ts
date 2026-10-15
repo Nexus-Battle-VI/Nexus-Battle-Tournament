@@ -5,6 +5,7 @@ import { RegistrationError } from '../../domain/registration'
 import type { MatchAcceptance } from './MatchAcceptance'
 import type { EncounterAdministration } from './EncounterAdministration'
 import type { Progressions } from './Progressions'
+import type { TournamentClosures } from './TournamentClosures'
 export const ACCEPTANCE_RECONCILIATION = Symbol('AcceptanceReconciliation')
 /** Intención persistida antes de HTTP. Cada worker reclama una lease de esa justa. */
 export class AcceptanceReconciliation {
@@ -13,13 +14,18 @@ export class AcceptanceReconciliation {
     private readonly acceptance: MatchAcceptance,
     private readonly administration: EncounterAdministration,
     private readonly progress: Progressions,
+    private readonly closures?: TournamentClosures,
   ) {}
   async sweep(): Promise<void> {
     await this.progress.reconcile()
+    await this.closures?.sweep()
     const tournaments = await this.tournaments.list()
     await Promise.allSettled(
       tournaments
-        .filter((t) => t.acceptancePolicy === ACCEPTANCE_POLICY && t.bracket !== null)
+        .filter(
+          (t) =>
+            t.closure == null && t.acceptancePolicy === ACCEPTANCE_POLICY && t.bracket !== null,
+        )
         .flatMap((t) => (t.bracket?.matches ?? []).map((m) => this.run(t.id, m.encounterId))),
     )
   }

@@ -16,7 +16,7 @@ Gestiona el ciclo de vida completo del torneo, que dura semanas y abarca muchas 
 
 ## Datos que posee
 
-- **Torneos**: fecha, estado y administrador que los crea. Solo se permite uno cada 91 días (§7.9 del documento oficial).
+- **Torneos**: fecha, estado y administrador que los crea. La decisión de producto del 14 de octubre de 2026 permite crear varios torneos sin separación mínima de fechas; véase [recuperación de torneos](tournament-recovery.md).
 - **Equipos inscritos**: exactamente dos jugadores distintos. Account valida nombre y avatar de un integrante; el compañero acepta desde su propia sesión. Estados: `AWAITING_CONSENT`, `PENDING_PAYMENT`, `PAYMENT_PENDING`, `COMPENSATING`, `CONFIRMED`, `CANCELLED`.
 - **Inscripciones y pagos de cupo**, con su `operationId`.
 - **Bracket** de ocho equipos humanos `CONFIRMED` y dieciséis jugadores distintos. La HU-78 vigente excluye IA y reemplaza la regla antigua del sprint. Tiene dos árboles:
@@ -35,7 +35,7 @@ Motor: **PostgreSQL**, base lógica `tournament` con usuario y credenciales prop
 
 - **El octavo cupo lo gana como mucho un equipo.** La confirmación de cupo bloquea el torneo con `SELECT ... FOR UPDATE`. El equipo que pierde la carrera no queda cobrado.
 - **Un jugador no está en dos equipos del mismo torneo**: índice único.
-- **Inicios separados por 91 × 24 horas**: comparación global de `startsAt` UTC en ambos sentidos, protegida por restricción de exclusión SQL. La frontera exacta de 91 días es válida.
+- **Horarios válidos e idempotencia administrativa**: los torneos pueden compartir fecha. La migración 012 elimina la exclusión de 91 días, conserva los controles de horarios y agrega cierre durable y devolución de inscripciones.
 - **Un resultado por justa**: confirmar dos veces devuelve el mismo resultado. Un resultado de otra sala se rechaza.
 - **Un premio por campeón**: `operation_id` único por entrega.
 - Importes `bigint` y estrictamente positivos. Nunca coma flotante para dinero.

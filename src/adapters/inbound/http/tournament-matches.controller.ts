@@ -1,4 +1,13 @@
-import { Controller, Get, Inject, NotFoundException, Optional, Param, Query } from '@nestjs/common'
+import {
+  Controller,
+  ForbiddenException,
+  Get,
+  Inject,
+  NotFoundException,
+  Optional,
+  Param,
+  Query,
+} from '@nestjs/common'
 import { ApiOperation, ApiTags } from '@nestjs/swagger'
 
 import { TournamentMatchNotFoundError } from '../../../domain/errors/TournamentMatchNotFoundError'
@@ -17,8 +26,12 @@ import {
   type MatchAcceptance,
 } from '../../../application/use-cases/MatchAcceptance'
 import { CurrentIdentity } from './auth/decorators'
-import type { VerifiedIdentity } from '../../../application/ports/TokenVerifierPort'
+import { Role, type VerifiedIdentity } from '../../../application/ports/TokenVerifierPort'
 import type { TournamentEncounter } from '../../../domain/entities/TournamentEncounter'
+import {
+  TOURNAMENT_CLOSURES,
+  type TournamentClosures,
+} from '../../../application/use-cases/TournamentClosures'
 
 /**
  * HU-83 (Management#465): registro y consulta de las justas de un torneo.
@@ -35,6 +48,7 @@ export class TournamentMatchesController {
     @Inject(LIST_TOURNAMENT_MATCHES) private readonly listMatches: ListTournamentMatches,
     @Inject(GET_TOURNAMENT_MATCH_DETAIL) private readonly matchDetail: GetTournamentMatchDetail,
     @Optional() @Inject(MATCH_ACCEPTANCE) private readonly acceptance?: MatchAcceptance,
+    @Optional() @Inject(TOURNAMENT_CLOSURES) private readonly closures?: TournamentClosures,
   ) {}
 
   @Get(':tournamentId/matches')
@@ -50,6 +64,43 @@ export class TournamentMatchesController {
     )
   }
 
+  @Get(':tournamentId/matches/mine')
+  @ApiOperation({ summary: 'Historial personal de batallas del jugador autenticado' })
+  async ownList(@Param('tournamentId') id: string, @CurrentIdentity() actor: VerifiedIdentity) {
+    const encounters = await this.listMatches.execute(id)
+    return Promise.all(
+      encounters
+        .filter((e) => this.belongs(e, actor.subject))
+        .map(async (e) => ({
+          ...(await this.enrich(e, toMatchSummaryResponse(e), actor.subject)),
+          myBattle: true,
+        })),
+    )
+  }
+
+  @Get(':tournamentId/matches/mine/:matchId')
+  @ApiOperation({ summary: 'Detalle y acciones de una batalla propia' })
+  async ownDetail(
+    @Param('tournamentId') id: string,
+    @Param('matchId') matchId: string,
+    @Query() query: MatchDetailQueryDto,
+    @CurrentIdentity() actor: VerifiedIdentity,
+  ) {
+    const encounter = (await this.listMatches.execute(id)).find((e) => e.encounterId === matchId)
+    if (encounter === undefined) throw new NotFoundException('La batalla no existe.')
+    if (!this.belongs(encounter, actor.subject))
+      throw new ForbiddenException('Esta batalla no pertenece a tu historial.')
+    return { ...(await this.detail(id, matchId, query, actor)), myBattle: true }
+  }
+
+  private belongs(e: TournamentEncounter, subject: string): boolean {
+    return (
+      e.teams.some((team) => team.participants.some((p) => p.playerId === subject)) ||
+      (e.bracketMetadata?.registeredTeams.some((team) => team?.memberIds.includes(subject)) ??
+        false)
+    )
+  }
+
   @Get(':tournamentId/matches/:matchId')
   @ApiOperation({
     summary:
@@ -62,6 +113,17 @@ export class TournamentMatchesController {
     @CurrentIdentity() actor?: VerifiedIdentity,
   ): Promise<MatchDetailResponse> {
     const afterSeq = query.afterSeq ?? 0
+    const reference = (await this.listMatches.execute(tournamentId)).find(
+      (e) => e.encounterId === matchId,
+    )
+    if (reference === undefined) throw new NotFoundException('La batalla no existe.')
+    if (
+      actor === undefined ||
+      (!this.belongs(reference, actor.subject) &&
+        !actor.roles.has(Role.Administrator) &&
+        !actor.roles.has(Role.SuperAdministrator))
+    )
+      throw new ForbiddenException('Solo puedes consultar el historial de tus batallas.')
 
     try {
       const { encounter, events } = await this.matchDetail.execute(tournamentId, matchId, afterSeq)
@@ -69,7 +131,7 @@ export class TournamentMatchesController {
       return await this.enrich(
         encounter,
         toMatchDetailResponse(encounter, events, afterSeq),
-        actor?.subject,
+        actor.subject,
       )
     } catch (error) {
       if (error instanceof TournamentMatchNotFoundError) {
@@ -90,13 +152,17 @@ export class TournamentMatchesController {
       e.bracketMetadata?.acceptancePolicy !== 'ROUND_ACCEPTANCE_V1' ||
       this.acceptance === undefined
     )
-      return response
+      return (await this.closures?.isClosed(e.tournamentId).catch(() => false))
+        ? { ...response, operationalStatus: 'TOURNAMENT_CLOSED' }
+        : response
     const projection = await this.acceptance.view(e.tournamentId, e.encounterId, subject)
     if (projection === null) return response
     return {
       ...response,
       ...projection,
-      ...(e.status === 'FINISHED' && projection.resolution === null
+      ...(e.status === 'FINISHED' &&
+      projection.resolution === null &&
+      projection.operationalStatus !== 'TOURNAMENT_CLOSED'
         ? { operationalStatus: 'RESOLUTION_PENDING' }
         : {}),
       ...(projection.resolution?.resultType === 'ABSENCE'
