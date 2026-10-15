@@ -136,7 +136,7 @@ Contrato: `Nexus-Battle-Infrastructure/docs/contracts/hu-85-tournament-encounter
 - `POST /:tournamentId/matches/:matchId/prepare` y `POST /:tournamentId/matches/:matchId/start`, cuerpo `{operationId}`. `matchId` es el identificador completo de HU-83 (`<tournamentId>:E1`).
 - `GET /:tournamentId/actions`: recibos en orden cronológico.
 
-Cada justa se serializa por sí misma; no hay bloqueo de torneo ni dependencia de la transmisión. Repetir una acción devuelve el recibo original con `replayed:true`. Ausencias, calendario, reprogramación y cancelación no tienen regla aprobada y no se implementan. La verificación y sus límites se registran en `docs/hu-85-verificacion.md` (tarea HU-85.4).
+Cada justa se serializa por sí misma; no hay bloqueo de torneo ni dependencia de la transmisión. Repetir una acción devuelve el recibo original con `replayed:true`. El calendario, la ventana de aceptación, las ausencias y las modalidades están en [torneos-v3-implementation.md](torneos-v3-implementation.md); reprogramación y cancelación siguen sin regla aprobada y no se implementan. La verificación y sus límites se registran en `docs/hu-85-verificacion.md` (tarea HU-85.4).
 
 ## Verificación y límites
 

@@ -2,6 +2,8 @@
 
 Fuente: [HU-85.4 #488](https://github.com/Nexus-Battle-VI/Nexus-Battle-Management/issues/488). Contrato verificado: `hu-85-tournament-encounter-administration-v1` (Infraestructura, **propuesta pendiente de revisión por los responsables**: nada de lo que sigue la presenta como aprobada).
 
+**Actualización (8 de octubre de 2026).** Después de este informe se integró en Tournament (PR #12) la ampliación v3 de HU-85: modalidades SOLO/DUO/TRIO, ventana de aceptación de 120 segundos por ronda, avance por ausencia y sorteo (contrato [torneos-v3.0.0](https://github.com/Nexus-Battle-VI/Nexus-Battle-Infrastructure/blob/develop/docs/contracts/torneos-v3.0.0.md)). Este informe cubre la administración Preparar/Iniciar y se re-ejecutó sobre ese `develop` con el Combat actual: unitarias, HTTP y Combat real 364 de 364 y cobertura de sentencias 96,2 %; PostgreSQL real 60 de 61 a la primera, con una prueba de v3 (`match-acceptance`, «Final por ausencia…») que superó el límite fijo de 30 s en esta máquina y pasa con un límite mayor. La regla de ausencia de v3 la verifican las pruebas de ese PR, no este informe.
+
 Estado de las tareas de HU-85 al redactar este informe: contrato HU-85.1 (Infrastructure #200) y backend HU-85.2 (Tournament #9) fusionados; Web HU-85.3 fusionado (Web #219). Combat se verificó con su `develop` del 2026-10-07 (incluye EN-036.2 y EN-036.3, que no tocan las rutas de torneo).
 
 ## Qué es real y qué es de prueba
@@ -66,10 +68,12 @@ La base de datos impide por sí misma duplicar recibos (acción por justa y `ope
 - Los equipos que se envían a Combat salen del snapshot inmutable del bracket, nunca de la solicitud.
 - Combat decide la elegibilidad final (héroe equipado y bloqueos); Tournament reenvía sus bloqueos sin inventar participantes ni ganador.
 
-## Decisiones de negocio NO aprobadas
+## Decisiones de negocio
 
-Siguen sin regla aprobada y esta entrega **no** las implementa: reprogramación, cancelación y reacción a fechas vencidas (la regla firme de la HU, sin derrotas ni ganadores automáticos, sí se cumple y se prueba en C13); tamaño de equipo (2 vs hasta 6); auditoría de intentos rechazados. El contrato las marca como pendientes.
+**Al redactar este informe** seguían sin regla aprobada la ausencia, el calendario y el tamaño de equipo. **Hoy** los resuelve torneos-v3.0.0 para los torneos con modalidad explícita (ventana de 120 s, equipo listo con todos sus integrantes, avance del único equipo listo o del de más jugadores listos, sorteo en empate, victoria normal registrada como ausencia, SOLO/DUO/TRIO). El caso C13 de este informe (iniciar tarde no fija resultado) sigue siendo cierto para la administración manual y para los torneos anteriores sin calendario.
+
+**Siguen sin regla aprobada:** reprogramación y cancelación por justa (Carlos pidió no permitirlas, sin más detalle) y el registro de los intentos rechazados. La aceptación del Product Owner de la regla de ausencia sigue pendiente.
 
 ## Qué no se verificó
 
-Cognito real y roles reales; Account e Inventory reales (Combat los consume como dobles); Wallet y premios; transmisión; despliegue real (el compose de Infrastructure en `develop` ya declara `COMBAT_BASE_URL`, `ACCOUNT_BASE_URL` y `WALLET_BASE_URL` para `tournament`; no se desplegó); Combat con persistencia real; el avance del bracket (HU-80).
+Cognito real y roles reales; Account e Inventory reales (Combat los consume como dobles); Wallet y premios; transmisión; despliegue real (el compose de Infrastructure en `develop` ya declara `COMBAT_BASE_URL`, `ACCOUNT_BASE_URL` y `WALLET_BASE_URL` para `tournament`; no se desplegó); Combat con persistencia real; la aceptación del Product Owner.
