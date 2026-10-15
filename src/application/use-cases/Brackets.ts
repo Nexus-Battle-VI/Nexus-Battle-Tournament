@@ -4,6 +4,7 @@ import {
   saveOperation,
   validateOperation,
   requireRule,
+  requireActiveTournament,
 } from '../../domain/registration'
 import type { ClockPort } from '../ports/ClockPort'
 import type { RegistrationRepository } from '../ports/RegistrationPorts'
@@ -19,6 +20,7 @@ export class Brackets {
   publish(id: string, subject: string, operationId: string): Promise<PublishedBracket> {
     validateOperation(operationId)
     return this.repository.change(id, (t) => {
+      requireActiveTournament(t)
       const intent = JSON.stringify(['bracket', subject])
       const previous = getOperation(t, operationId)
       requireRule(

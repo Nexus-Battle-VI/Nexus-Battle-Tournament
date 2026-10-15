@@ -49,7 +49,7 @@ const failure = (code: string, message: string, status = 503): Failure => ({
 const throwFailure = (value: Failure): never => {
   throw new RegistrationError(value.code, value.message, value.status)
 }
-const validWalletResult = (
+export const validWalletResult = (
   value: unknown,
   expected: EntryCharge,
   chargeId?: string,
@@ -94,7 +94,7 @@ export class Registrations {
   constructor(
     readonly repository: RegistrationRepository,
     private readonly accounts: TournamentAccounts,
-    private readonly wallet: TournamentWallet,
+    readonly wallet: TournamentWallet,
     private readonly clock: ClockPort,
     private readonly simulator: SimulatedEntryPayment,
   ) {}
@@ -746,6 +746,7 @@ export class Registrations {
     ).length
     return {
       tournament: publicTournament(t, this.clock.now()),
+      refunds: t.closure?.refunds.filter((r) => r.payerId === subject) ?? [],
       capacity: {
         confirmed,
         reserved,

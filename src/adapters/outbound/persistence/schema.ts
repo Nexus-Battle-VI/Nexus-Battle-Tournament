@@ -15,6 +15,7 @@ import type {
   TournamentResolution,
 } from '../../../domain/match-acceptance'
 import type { EncounterBracketMetadata } from '../../../domain/entities/TournamentEncounter'
+import type { TournamentClosure } from '../../../domain/tournament-closure'
 
 import type { TournamentEncounterTeam } from '../../../domain/entities/TournamentEncounter'
 
@@ -161,6 +162,8 @@ export interface TournamentEncounterActionTable {
   readonly occurred_at: ColumnType<Date, Date, never>
 }
 export interface RegistrationTournamentTable {
+  closure: ColumnType<TournamentClosure | null, string | null | undefined, string | null>
+  last_activity_at: ColumnType<Date | null, Date | null | undefined, Date | null>
   is_test: ColumnType<boolean, boolean | undefined, never>
   acceptance_policy: ColumnType<
     'ROUND_ACCEPTANCE_V1' | null,

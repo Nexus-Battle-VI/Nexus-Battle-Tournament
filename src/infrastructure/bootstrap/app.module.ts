@@ -50,6 +50,12 @@ import { HttpCombatRoomCommandAdapter } from '../../adapters/outbound/combat/Htt
 import { InMemoryEncounterAdminStore } from '../../adapters/outbound/persistence/InMemoryEncounterAdminStore'
 import { PostgresEncounterAdminStore } from '../../adapters/outbound/persistence/PostgresEncounterAdminStore'
 import { Registrations, REGISTRATIONS } from '../../application/use-cases/Registrations'
+import {
+  TournamentClosures,
+  TOURNAMENT_CLOSURES,
+} from '../../application/use-cases/TournamentClosures'
+import { TournamentClosuresController } from '../../adapters/inbound/http/tournament-closures.controller'
+import { requireActiveTournament } from '../../domain/registration'
 import { Brackets, BRACKETS } from '../../application/use-cases/Brackets'
 import { RegistrationServices } from '../../adapters/outbound/http/RegistrationServices'
 import { SimulatedEntryGateway } from '../../adapters/outbound/payment/SimulatedEntryGateway'
@@ -141,6 +147,7 @@ export const INTERNAL_CALLERS: readonly string[] = []
     HealthController,
     TournamentMatchesController,
     RegistrationsController,
+    TournamentClosuresController,
     BracketsController,
     EncounterAdminController,
     ResultsPrizesController,
@@ -212,14 +219,27 @@ export const INTERNAL_CALLERS: readonly string[] = []
       inject: [MATCH_ACCEPTANCE_STORE, REGISTRATIONS, PROGRESSIONS, CLOCK, FAIR_RANDOM],
     },
     {
+      provide: TOURNAMENT_CLOSURES,
+      useFactory: (r: Registrations, lifecycle: LifecycleRepository, clock: ClockPort) =>
+        new TournamentClosures(r.repository, lifecycle, r.wallet, clock),
+      inject: [REGISTRATIONS, LIFECYCLE_REPOSITORY, CLOCK],
+    },
+    {
       provide: ACCEPTANCE_RECONCILIATION,
       useFactory: (
         r: Registrations,
         a: MatchAcceptance,
         admin: EncounterAdministration,
         p: Progressions,
-      ) => new AcceptanceReconciliation(r.repository, a, admin, p),
-      inject: [REGISTRATIONS, MATCH_ACCEPTANCE, ENCOUNTER_ADMINISTRATION, PROGRESSIONS],
+        closures: TournamentClosures,
+      ) => new AcceptanceReconciliation(r.repository, a, admin, p, closures),
+      inject: [
+        REGISTRATIONS,
+        MATCH_ACCEPTANCE,
+        ENCOUNTER_ADMINISTRATION,
+        PROGRESSIONS,
+        TOURNAMENT_CLOSURES,
+      ],
     },
     {
       provide: AcceptanceReconciler,
@@ -509,6 +529,7 @@ export const INTERNAL_CALLERS: readonly string[] = []
         clock: ClockPort,
         brackets: Brackets,
         acceptance: MatchAcceptance,
+        r: Registrations,
       ): EncounterAdministration =>
         new EncounterAdministration(
           repository,
@@ -519,6 +540,9 @@ export const INTERNAL_CALLERS: readonly string[] = []
           clock,
           (id) => brackets.view(id),
           (id, encounterId) => acceptance.guard(id, encounterId),
+          async (id) => {
+            requireActiveTournament(await r.repository.read(id))
+          },
         ),
       inject: [
         TOURNAMENT_ENCOUNTER_REPOSITORY,
@@ -529,6 +553,7 @@ export const INTERNAL_CALLERS: readonly string[] = []
         CLOCK,
         BRACKETS,
         MATCH_ACCEPTANCE,
+        REGISTRATIONS,
       ],
     },
     {

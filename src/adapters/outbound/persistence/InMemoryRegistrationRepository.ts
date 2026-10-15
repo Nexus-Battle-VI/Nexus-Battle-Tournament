@@ -1,11 +1,7 @@
 import type { RegistrationRepository } from '../../../application/ports/RegistrationPorts'
 import { sameJson } from '../../../domain/json'
 import type { TournamentEncounterRepositoryPort } from '../../../application/ports/TournamentEncounterRepositoryPort'
-import {
-  RegistrationError,
-  CALENDAR_DISTANCE_MS,
-  type RegistrationTournament,
-} from '../../../domain/registration'
+import { RegistrationError, type RegistrationTournament } from '../../../domain/registration'
 import { bracketEncounters } from '../../../domain/bracket'
 
 /** Doble de pruebas: el proceso no sustituye la persistencia de producción. */
@@ -28,22 +24,6 @@ export class InMemoryRegistrationRepository implements RegistrationRepository {
         return Promise.reject(new RegistrationError('OPERATION_CONFLICT', 'Otra intención.', 409))
       return this.read(existing.tournamentId)
     }
-    if (
-      t.isTest !== true &&
-      [...this.tournaments.values()].some(
-        (x) =>
-          x.isTest !== true &&
-          Math.abs(new Date(x.startsAt).getTime() - new Date(t.startsAt).getTime()) <
-            CALENDAR_DISTANCE_MS,
-      )
-    )
-      return Promise.reject(
-        new RegistrationError(
-          'CALENDAR_CONFLICT',
-          'Los inicios deben tener 91 días de separación.',
-          409,
-        ),
-      )
     this.tournaments.set(t.id, structuredClone(t))
     this.adminOperations.set(operationId, { intent, tournamentId: t.id })
     return Promise.resolve(structuredClone(t))
@@ -53,6 +33,12 @@ export class InMemoryRegistrationRepository implements RegistrationRepository {
     return t === undefined
       ? Promise.reject(new RegistrationError('TOURNAMENT_NOT_FOUND', 'El torneo no existe.', 404))
       : Promise.resolve(structuredClone(t))
+  }
+  async recordActivity(id: string, at: string): Promise<void> {
+    await this.change(id, (t) => {
+      if (t.closure == null && new Date(at) > new Date(t.lastActivityAt ?? t.opensAt))
+        t.lastActivityAt = at
+    })
   }
   async change<T>(id: string, action: (t: RegistrationTournament) => T): Promise<T> {
     const prior = this.tails.get(id) ?? Promise.resolve()
